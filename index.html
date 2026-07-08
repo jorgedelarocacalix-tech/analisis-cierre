@@ -439,148 +439,102 @@ function renderResumen(){
     <td class="num">${fmt(totVen)}</td><td></td><td></td>
   </tr></tbody></table></div>`;
 
-  // ── Seguimiento Julio 2026 ───────────────────────────────────
+  // ── Seguimiento Julio 2026 — ventas + cobros en una tabla ───
   if(arqueosJulio.length){
     const agJul = aggBySuc(arqueosJulio);
     const hoy = new Date();
-    const diasMes = 31; // julio
-    const diasTransc = hoy.getDate();
-    const pctMes = diasTransc / diasMes;
+    const diasMes = 31;
+    const diaHoy = hoy.getDate();
+    const pctMes = diaHoy / diasMes;
 
-    html += `<div class="stitle">📊 Seguimiento Julio 2026 — día ${diasTransc} de ${diasMes}</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px">`;
+    // Proyección cobros por sucursal
+    const proyBySuc = {};
+    for(const item of proyeccion){
+      const suc = CARTERA_TO_SUC[item.cartera_id];
+      if(!suc) continue;
+      if(!proyBySuc[suc]) proyBySuc[suc]=0;
+      for(const c of (item.datos||[])){
+        const dia = Number(c.diaAsesor||0);
+        if(dia>0 && dia<=diaHoy) proyBySuc[suc] += Number(c.montoAsesor||0);
+      }
+    }
 
+    html += `<div class="stitle">Seguimiento Julio 2026 — día ${diaHoy} de ${diasMes}</div>
+    <div class="tw"><table>
+      <thead>
+        <tr>
+          <th rowspan="2">Sucursal</th>
+          <th class="num" colspan="3" style="border-bottom:1px solid var(--borde);text-align:center">Ventas (meta junio +10%)</th>
+          <th class="num" colspan="3" style="border-bottom:1px solid var(--borde);text-align:center">Cobros CXC (abonos vs proyectado)</th>
+        </tr>
+        <tr>
+          <th class="num">Vendido julio</th>
+          <th class="num">Meta julio</th>
+          <th class="num">% / ritmo</th>
+          <th class="num">Proyectado hoy</th>
+          <th class="num">Cobrado real</th>
+          <th class="num">% cobros</th>
+        </tr>
+      </thead><tbody>`;
+
+    let tVend=0, tMetaV=0, tCobProy=0, tCobReal=0;
     for(const s of SUCORDER){
       const jun = ag[s];
       const jul = agJul[s];
       if(!jun) continue;
 
-      const metaVentas = jun.ventas_erp * 1.10;
-      const vendidoJul = jul ? jul.ventas_erp : 0;
-      const pctLogrado = metaVentas > 0 ? vendidoJul / metaVentas : 0;
-      const ritmo = pctMes > 0 ? pctLogrado / pctMes : 0; // >1 adelantado, <1 atrasado
-      const proyeccierre = pctMes > 0 ? vendidoJul / pctMes : 0;
-      const diasArq = jul ? jul.dias : 0;
+      const metaV   = jun.ventas_erp * 1.10;
+      const vendJul = jul ? jul.ventas_erp : 0;
+      const pctV    = metaV > 0 ? vendJul/metaV : 0;
+      const ritmo   = pctMes > 0 ? pctV/pctMes : 0;
+      const proyV   = pctMes > 0 ? vendJul/pctMes : 0;
 
-      // Cobros julio
-      const cobJul = jul ? jul.cobrado : 0;
-      const metaCob = jun.cobrado * 1.05; // meta cobros +5%
-      const pctCob = metaCob > 0 ? cobJul / metaCob : 0;
+      const cobProy = proyBySuc[s] || 0;
+      const cobReal = jul ? jul.cob_abono : 0;
+      const pctCob  = cobProy > 0 ? cobReal/cobProy : 0;
 
-      // Comentario automático
-      let comentario, color, icono;
-      if(vendidoJul === 0){
-        comentario = `Sin arqueos en julio aún`;
-        color = 'var(--texto2)'; icono = '⏳';
-      } else if(ritmo >= 1.10){
-        comentario = `Excelente ritmo — proyecta cerrar en <b>${fmt(proyeccierre)}</b>, superando la meta`;
-        color = 'var(--verde)'; icono = '🚀';
-      } else if(ritmo >= 0.95){
-        comentario = `En ritmo — proyecta <b>${fmt(proyeccierre)}</b> vs meta <b>${fmt(metaVentas)}</b>`;
-        color = 'var(--verde)'; icono = '✅';
-      } else if(ritmo >= 0.80){
-        comentario = `Ligeramente atrasado — proyecta <b>${fmt(proyeccierre)}</b>, falta empujar esta semana`;
-        color = 'var(--ambar)'; icono = '⚠️';
-      } else {
-        comentario = `Atrasado — proyecta <b>${fmt(proyeccierre)}</b> vs meta <b>${fmt(metaVentas)}</b> — <b>presionar urgente</b>`;
-        color = 'var(--rojo)'; icono = '🚨';
-      }
+      // Color ventas
+      let cv, iv;
+      if(vendJul===0){cv='var(--texto2)';iv='⏳';}
+      else if(ritmo>=1.10){cv='var(--verde)';iv='🚀';}
+      else if(ritmo>=0.95){cv='var(--verde)';iv='✅';}
+      else if(ritmo>=0.80){cv='var(--ambar)';iv='⚠️';}
+      else{cv='var(--rojo)';iv='🚨';}
 
-      const barPct = Math.min(pctLogrado*100, 100);
-      const barEsp = Math.min(pctMes*100, 100);
+      // Color cobros
+      let cc, ic;
+      if(cobProy===0){cc='var(--texto2)';ic='—';}
+      else if(pctCob>=0.95){cc='var(--verde)';ic='✅';}
+      else if(pctCob>=0.75){cc='var(--ambar)';ic='⚠️';}
+      else{cc='var(--rojo)';ic='🚨';}
 
-      html+=`<div style="background:var(--card);border:1px solid var(--borde);border-radius:10px;padding:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-weight:700;font-size:15px">${icono} ${s} <span style="font-size:11px;color:var(--texto2);font-weight:400">${SNAMES[s]}</span></span>
-          <span style="font-size:11px;color:var(--texto2)">${diasArq} días</span>
-        </div>
-        <div style="font-size:11px;color:var(--texto2);margin-bottom:4px">Ventas julio vs meta (+10% jun)</div>
-        <div style="position:relative;height:10px;background:#eee;border-radius:5px;margin-bottom:2px">
-          <div style="position:absolute;height:100%;border-radius:5px;background:${color};width:${barPct}%;transition:width 0.4s"></div>
-          <div style="position:absolute;top:-2px;height:14px;width:2px;background:#333;left:${barEsp}%;opacity:0.4"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:8px">
-          <span style="color:${color};font-weight:700">${fmt(vendidoJul)} <span style="font-weight:400">(${Math.round(pctLogrado*100)}%)</span></span>
-          <span style="color:var(--texto2)">Meta: ${fmt(metaVentas)}</span>
-        </div>
-        <div style="font-size:11px;color:var(--texto2);margin-bottom:2px">Cobros julio vs meta (+5% jun)</div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px">
-          <span style="font-weight:700;color:var(--azul)">${fmt(cobJul)}</span>
-          <span style="color:var(--texto2)">${Math.round(pctCob*100)}% de ${fmt(metaCob)}</span>
-        </div>
-        <div style="font-size:11px;color:${color};border-top:1px solid var(--borde);padding-top:8px;margin-top:4px">${comentario}</div>
-      </div>`;
+      const ritmoTxt = vendJul>0 ? `${Math.round(pctV*100)}% <span style="font-size:10px;color:${cv}">${iv} ${Math.round(ritmo*100)}% ritmo</span>` : `<span style="color:var(--texto2)">⏳ sin datos</span>`;
+      const cobPctTxt = cobProy>0 ? `<span style="color:${cc};font-weight:700">${ic} ${Math.round(pctCob*100)}%</span>` : `<span style="color:var(--texto2)">—</span>`;
+
+      tVend+=vendJul; tMetaV+=metaV; tCobProy+=cobProy; tCobReal+=cobReal;
+
+      html+=`<tr>
+        <td><b>${s}</b> <span style="font-size:11px;color:var(--texto2)">${SNAMES[s]}</span></td>
+        <td class="num cv" style="font-weight:700">${fmt(vendJul)}</td>
+        <td class="num" style="color:var(--texto2)">${fmt(metaV)}</td>
+        <td class="num">${ritmoTxt}</td>
+        <td class="num cb">${cobProy>0?fmt(cobProy):'—'}</td>
+        <td class="num cv" style="font-weight:700">${fmt(cobReal)}</td>
+        <td class="num">${cobPctTxt}</td>
+      </tr>`;
     }
-    html += `</div>`;
 
-    // ── Cobros proyectados vs real ────────────────────────────
-    if(proyeccion.length){
-      // Solo ABONO — lo que baja de cuentas por cobrar, sin primas ni contado
-      const cobJulBySuc = {};
-      for(const s of SUCORDER){
-        cobJulBySuc[s] = agJul[s] ? agJul[s].cob_abono : 0;
-      }
-      const diaHoy = hoy.getDate();
-
-      html += `<div class="stitle" style="margin-top:8px">Cobros — proyectado vs real al día ${diaHoy} de julio</div>
-      <div class="tw"><table>
-        <thead><tr>
-          <th>Cartera</th>
-          <th class="num">Proyectado al día ${diaHoy}</th>
-          <th class="num">Abonos CXC reales</th>
-          <th class="num">Diferencia</th>
-          <th class="num">% cumplido</th>
-          <th>Estado</th>
-        </tr></thead><tbody>`;
-
-      const proyOrden = [...proyeccion].sort((a,b)=>{
-        const sa = SUCORDER.indexOf(CARTERA_TO_SUC[a.cartera_id]??'');
-        const sb = SUCORDER.indexOf(CARTERA_TO_SUC[b.cartera_id]??'');
-        return (sa<0?99:sa)-(sb<0?99:sb);
-      });
-      let tProy=0, tReal=0;
-      for(const item of proyOrden){
-        const datos = item.datos || [];
-        const cid = item.cartera_id;
-        const suc = CARTERA_TO_SUC[cid];
-
-        // Sumar solo clientes con diaAsesor <= hoy
-        const cobProy = datos.reduce((s,c)=>{
-          const dia = Number(c.diaAsesor||0);
-          return s + (dia>0 && dia<=diaHoy ? Number(c.montoAsesor||0) : 0);
-        }, 0);
-        const cobReal = suc ? (cobJulBySuc[suc]||0) : 0;
-        const dif = cobReal - cobProy;
-        const pctC = cobProy > 0 ? Math.round(cobReal/cobProy*100) : 0;
-
-        let icon, color;
-        if(cobProy===0){ icon='—'; color='var(--texto2)'; }
-        else if(pctC>=95){ icon='✅'; color='var(--verde)'; }
-        else if(pctC>=75){ icon='⚠️'; color='var(--ambar)'; }
-        else { icon='🚨'; color='var(--rojo)'; }
-
-        tProy+=cobProy; tReal+=cobReal;
-        html+=`<tr>
-          <td><b>${CARTERA_NAMES[cid]||cid}</b></td>
-          <td class="num cb">${fmt(cobProy)}</td>
-          <td class="num cv">${fmt(cobReal)}</td>
-          <td class="num" style="color:${dif>=0?'var(--verde)':'var(--rojo)'};font-weight:700">${dif>=0?'+':''}${fmt(dif)}</td>
-          <td class="num" style="color:${color};font-weight:700">${cobProy>0?pctC+'%':'—'}</td>
-          <td style="color:${color}">${icon}</td>
-        </tr>`;
-      }
-
-      const tDif = tReal-tProy;
-      const tPct = tProy>0 ? Math.round(tReal/tProy*100) : 0;
-      html+=`<tr style="background:var(--gris);font-weight:700">
-        <td>TOTAL</td>
-        <td class="num cb">${fmt(tProy)}</td>
-        <td class="num cv">${fmt(tReal)}</td>
-        <td class="num" style="color:${tDif>=0?'var(--verde)':'var(--rojo)'}">${tDif>=0?'+':''}${fmt(tDif)}</td>
-        <td class="num">${tPct}%</td>
-        <td></td>
-      </tr></tbody></table></div>`;
-    }
+    const tPctV  = tMetaV>0  ? Math.round(tVend/tMetaV*100)    : 0;
+    const tPctC  = tCobProy>0? Math.round(tCobReal/tCobProy*100): 0;
+    html+=`<tr style="background:var(--gris);font-weight:700">
+      <td>TOTAL</td>
+      <td class="num cv">${fmt(tVend)}</td>
+      <td class="num">${fmt(tMetaV)}</td>
+      <td class="num">${tPctV}%</td>
+      <td class="num cb">${fmt(tCobProy)}</td>
+      <td class="num cv">${fmt(tCobReal)}</td>
+      <td class="num">${tPctC}%</td>
+    </tr></tbody></table></div>`;
   }
 
   el.innerHTML = html;
