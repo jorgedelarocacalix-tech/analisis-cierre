@@ -149,6 +149,9 @@ tr.suc-r5 td:first-child{border-left:3px solid #E67E22}
 
   <!-- ══ RESUMEN ══════════════════════════════════════════════ -->
   <div class="panel on" id="panel-resumen">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button onclick="exportarResumen()" style="padding:7px 16px;background:var(--verde);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">⬇ Descargar Excel</button>
+    </div>
     <div id="resumenBody"><div class="loading-state">Cargando datos de Supabase…</div></div>
   </div>
 
@@ -660,6 +663,69 @@ function renderResumen(){
   }
 
   el.innerHTML = html;
+}
+
+function exportarResumen(){
+  if(!arqueos.length){ alert('Cargue los datos primero.'); return; }
+
+  const ag     = aggBySuc(arqueos);
+  const agJul  = aggBySuc(arqueosJulio);
+  const hoy    = new Date();
+  const diaHoy = hoy.getDate();
+  const pctMes = diaHoy / 31;
+
+  // Proyección cobros al día
+  const proyBySuc={}, proyMesBySuc={};
+  for(const item of proyeccion){
+    const suc=CARTERA_TO_SUC[item.cartera_id]; if(!suc) continue;
+    if(!proyBySuc[suc])    proyBySuc[suc]=0;
+    if(!proyMesBySuc[suc]) proyMesBySuc[suc]=0;
+    for(const c of (item.datos||[])){
+      const dia=Number(c.diaAsesor||0), m=Number(c.montoAsesor||0);
+      proyMesBySuc[suc]+=m;
+      if(dia>0&&dia<=diaHoy) proyBySuc[suc]+=m;
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Hoja 1: Ventas julio ──
+  const hVentas=[['Sucursal','Meta Julio','Vendido Julio','Falta','Avance %']];
+  for(const s of SUCORDER){
+    const jun=ag[s]; if(!jun) continue;
+    const meta=jun.ventas_erp*1.10, vend=agJul[s]?agJul[s].ventas_erp:0;
+    hVentas.push([SNAMES[s], Math.round(meta), Math.round(vend), Math.round(meta-vend), meta>0?+(vend/meta*100).toFixed(1):0]);
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hVentas), 'Ventas Julio');
+
+  // ── Hoja 2: Cobros CXC ──
+  const hCobros=[['Sucursal','Proy. Mes Completo','Proy. al Día '+diaHoy,'Cobrado (Abonos)','Avance %']];
+  for(const s of SUCORDER){
+    const jun=ag[s]; if(!jun) continue;
+    const proy=proyBySuc[s]||0, mes=proyMesBySuc[s]||0, real=agJul[s]?agJul[s].cob_abono:0;
+    hCobros.push([SNAMES[s], Math.round(mes), Math.round(proy), Math.round(real), proy>0?+(real/proy*100).toFixed(1):0]);
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hCobros), 'Cobros CXC');
+
+  // ── Hoja 3: Monitor cartera ──
+  const TRAMOS=['MES','60','90','120','150','VENCIDO','INACTIVO'];
+  const hMonitor=[['Sucursal','Saldo Cartera','Mora Total','% Mora','Clientes Al Corriente','Clientes En Mora','Recuperación Proy.','Cobrado Real','% Recuperado']];
+  for(const s of SUCORDER){
+    const item=proyeccion.find(p=>CARTERA_TO_SUC[p.cartera_id]===s); if(!item) continue;
+    let saldo=0,mora=0,saldoEsp=0,corr=0,enMora=0;
+    for(const c of (item.datos||[])){
+      const t=String(c.mora||'MES').toUpperCase();
+      saldo+=Number(c.saldo||0); mora+=Number(c.moraVal||0); saldoEsp+=Number(c.saldoEsperado||0);
+      if(t==='MES') corr++; else enMora++;
+    }
+    const recEsp=saldo-saldoEsp, real=agJul[s]?agJul[s].cob_abono:0;
+    hMonitor.push([SNAMES[s], Math.round(saldo), Math.round(mora), saldo>0?+(mora/saldo*100).toFixed(1):0,
+      corr, enMora, Math.round(recEsp), Math.round(real), recEsp>0?+(real/recEsp*100).toFixed(1):0]);
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hMonitor), 'Monitor Cartera');
+
+  const fecha = hoy.toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Analisis_Cierre_${fecha}.xlsx`);
 }
 
 function filterMon(suc, btn){
