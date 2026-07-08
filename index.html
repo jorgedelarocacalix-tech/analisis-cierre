@@ -556,7 +556,7 @@ function renderVentas(entries){
     ${topVend?`<div class="kpi"><div class="kpi-l">⭐ Top Vendedor</div><div class="kpi-v cm" style="font-size:14px">${topVend[0]}</div><div class="kpi-s">${fmt(topVend[1].total)} · ${pct(topVend[1].total,totalGlobal)}%</div></div>`:''}
   </div>`;
 
-  if(iVend<0) h+=`<div class="abox warning">⚠ No se detectó columna de vendedor. Columnas: <b>${rows[0].join(', ')}</b></div>`;
+  if(data.some(r=>r.vend==='Sin vendedor')) h+=`<div class="abox warning">⚠ Algunos registros no tienen vendedor detectado. Verifica las columnas del Excel.</div>`;
 
   h+=`<div class="stitle">Ranking vendedores — Junio 2026 · Meta Julio</div><div class="tw"><table>
     <thead><tr><th>#</th><th>Vendedor</th><th class="num">Junio</th><th class="num">% total</th><th class="num">Meta Julio (+10%)</th><th class="num">Transacc.</th><th>Desempeño</th><th>Top productos</th></tr></thead><tbody>`;
