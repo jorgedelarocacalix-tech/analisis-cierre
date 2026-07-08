@@ -249,6 +249,7 @@ const CARTERA_NAMES = {
 
 // ── State ────────────────────────────────────────────────────
 let arqueos = [];
+let arqueosJulio = [];
 let carteras = [];
 let proyeccion = [];
 let xlsVentas = null;
@@ -267,7 +268,7 @@ async function cargarTodo(){
   const btn = document.getElementById('btnCargar');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try {
-    await Promise.all([fetchArqueos(), fetchCarteras(), fetchProyeccion(), loadFromSupabase()]);
+    await Promise.all([fetchArqueos(), fetchArqueosJulio(), fetchCarteras(), fetchProyeccion(), loadFromSupabase()]);
     renderResumen();
     renderCXC();
     renderProyeccion();
@@ -293,6 +294,25 @@ async function fetchArqueos(){
     if(!seen.has(key)) seen.set(key, a);
   }
   arqueos = [...seen.values()];
+}
+
+// ── Fetch arqueos Julio 2026 — seguimiento diario ────────────
+async function fetchArqueosJulio(){
+  const hoy = new Date().toISOString().slice(0,10);
+  const { data, error } = await sb
+    .from('arqueos')
+    .select('id,sucursal,fecha,cobrado,gastos,depositado,analisis_json,version')
+    .gte('fecha','2026-07-01')
+    .lte('fecha', hoy)
+    .order('fecha',{ascending:false})
+    .order('version',{ascending:false});
+  if(error) throw error;
+  const seen = new Map();
+  for(const a of (data||[])){
+    const key = `${a.sucursal}_${a.fecha}`;
+    if(!seen.has(key)) seen.set(key, a);
+  }
+  arqueosJulio = [...seen.values()];
 }
 
 // ── Fetch carteras — estado actual ───────────────────────────
@@ -411,6 +431,81 @@ function renderResumen(){
     <td class="num" style="color:var(--azul)">${fmt(totPos)}</td>
     <td class="num">${fmt(totVen)}</td><td></td><td></td>
   </tr></tbody></table></div>`;
+
+  // ── Seguimiento Julio 2026 ───────────────────────────────────
+  if(arqueosJulio.length){
+    const agJul = aggBySuc(arqueosJulio);
+    const hoy = new Date();
+    const diasMes = 31; // julio
+    const diasTransc = hoy.getDate();
+    const pctMes = diasTransc / diasMes;
+
+    html += `<div class="stitle">📊 Seguimiento Julio 2026 — día ${diasTransc} de ${diasMes}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px">`;
+
+    for(const s of SUCORDER){
+      const jun = ag[s];
+      const jul = agJul[s];
+      if(!jun) continue;
+
+      const metaVentas = jun.ventas_erp * 1.10;
+      const vendidoJul = jul ? jul.ventas_erp : 0;
+      const pctLogrado = metaVentas > 0 ? vendidoJul / metaVentas : 0;
+      const ritmo = pctMes > 0 ? pctLogrado / pctMes : 0; // >1 adelantado, <1 atrasado
+      const proyeccierre = pctMes > 0 ? vendidoJul / pctMes : 0;
+      const diasArq = jul ? jul.dias : 0;
+
+      // Cobros julio
+      const cobJul = jul ? jul.cobrado : 0;
+      const metaCob = jun.cobrado * 1.05; // meta cobros +5%
+      const pctCob = metaCob > 0 ? cobJul / metaCob : 0;
+
+      // Comentario automático
+      let comentario, color, icono;
+      if(vendidoJul === 0){
+        comentario = `Sin arqueos en julio aún`;
+        color = 'var(--texto2)'; icono = '⏳';
+      } else if(ritmo >= 1.10){
+        comentario = `Excelente ritmo — proyecta cerrar en <b>${fmt(proyeccierre)}</b>, superando la meta`;
+        color = 'var(--verde)'; icono = '🚀';
+      } else if(ritmo >= 0.95){
+        comentario = `En ritmo — proyecta <b>${fmt(proyeccierre)}</b> vs meta <b>${fmt(metaVentas)}</b>`;
+        color = 'var(--verde)'; icono = '✅';
+      } else if(ritmo >= 0.80){
+        comentario = `Ligeramente atrasado — proyecta <b>${fmt(proyeccierre)}</b>, falta empujar esta semana`;
+        color = 'var(--ambar)'; icono = '⚠️';
+      } else {
+        comentario = `Atrasado — proyecta <b>${fmt(proyeccierre)}</b> vs meta <b>${fmt(metaVentas)}</b> — <b>presionar urgente</b>`;
+        color = 'var(--rojo)'; icono = '🚨';
+      }
+
+      const barPct = Math.min(pctLogrado*100, 100);
+      const barEsp = Math.min(pctMes*100, 100);
+
+      html+=`<div style="background:var(--card);border:1px solid var(--borde);border-radius:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-weight:700;font-size:15px">${icono} ${s} <span style="font-size:11px;color:var(--texto2);font-weight:400">${SNAMES[s]}</span></span>
+          <span style="font-size:11px;color:var(--texto2)">${diasArq} días</span>
+        </div>
+        <div style="font-size:11px;color:var(--texto2);margin-bottom:4px">Ventas julio vs meta (+10% jun)</div>
+        <div style="position:relative;height:10px;background:#eee;border-radius:5px;margin-bottom:2px">
+          <div style="position:absolute;height:100%;border-radius:5px;background:${color};width:${barPct}%;transition:width 0.4s"></div>
+          <div style="position:absolute;top:-2px;height:14px;width:2px;background:#333;left:${barEsp}%;opacity:0.4"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:8px">
+          <span style="color:${color};font-weight:700">${fmt(vendidoJul)} <span style="font-weight:400">(${Math.round(pctLogrado*100)}%)</span></span>
+          <span style="color:var(--texto2)">Meta: ${fmt(metaVentas)}</span>
+        </div>
+        <div style="font-size:11px;color:var(--texto2);margin-bottom:2px">Cobros julio vs meta (+5% jun)</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px">
+          <span style="font-weight:700;color:var(--azul)">${fmt(cobJul)}</span>
+          <span style="color:var(--texto2)">${Math.round(pctCob*100)}% de ${fmt(metaCob)}</span>
+        </div>
+        <div style="font-size:11px;color:${color};border-top:1px solid var(--borde);padding-top:8px;margin-top:4px">${comentario}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
 
   el.innerHTML = html;
 }
