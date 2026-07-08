@@ -534,8 +534,13 @@ function renderResumen(){
           <th>Estado</th>
         </tr></thead><tbody>`;
 
+      const proyOrden = [...proyeccion].sort((a,b)=>{
+        const sa = SUCORDER.indexOf(CARTERA_TO_SUC[a.cartera_id]??'');
+        const sb = SUCORDER.indexOf(CARTERA_TO_SUC[b.cartera_id]??'');
+        return (sa<0?99:sa)-(sb<0?99:sb);
+      });
       let tProy=0, tReal=0;
-      for(const item of proyeccion){
+      for(const item of proyOrden){
         const datos = item.datos || [];
         const cid = item.cartera_id;
         const suc = CARTERA_TO_SUC[cid];
