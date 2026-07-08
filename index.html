@@ -503,41 +503,50 @@ function renderResumen(){
 
     // ── Cobros CXC ──────────────────────────────────────────
     if(proyeccion.length){
+      // También calcular proyección mes completo por sucursal
+      const proyMesBySuc = {};
+      for(const item of proyeccion){
+        const suc = CARTERA_TO_SUC[item.cartera_id]; if(!suc) continue;
+        if(!proyMesBySuc[suc]) proyMesBySuc[suc]=0;
+        for(const c of (item.datos||[])) proyMesBySuc[suc] += Number(c.montoAsesor||0);
+      }
+
       html += `<div class="stitle" style="margin-top:16px">Cobros CXC julio — proyectado vs real al día ${diaHoy}</div>
       <div class="tw"><table>
         <thead><tr>
           <th>Sucursal</th>
-          <th class="num">Proyectado al día ${diaHoy}</th>
+          <th class="num">Proy. mes completo</th>
+          <th class="num">Proy. al día ${diaHoy}</th>
           <th class="num">Cobrado (abonos)</th>
-          <th class="num">Diferencia</th>
           <th class="num">Avance</th>
         </tr></thead><tbody>`;
 
-      let tcProy=0, tcReal=0;
+      let tcProy=0, tcMes=0, tcReal=0;
       for(const s of SUCORDER){
         const jun = ag[s]; if(!jun) continue;
         const jul = agJul[s];
-        const proy = proyBySuc[s]||0;
-        const real = jul ? jul.cob_abono : 0;
-        const dif  = real - proy;
-        const pctC = proy>0 ? Math.round(real/proy*100) : 0;
+        const proy    = proyBySuc[s]||0;
+        const proyMes = proyMesBySuc[s]||0;
+        const real    = jul ? jul.cob_abono : 0;
+        const pctC    = proy>0 ? Math.round(real/proy*100) : 0;
         let color = proy===0?'var(--texto2)':pctC>=95?'var(--verde)':pctC>=75?'var(--ambar)':'var(--rojo)';
-        let icon  = proy===0?'—':pctC>=95?'✅':pctC>=75?'⚠️':'🚨';
-        tcProy+=proy; tcReal+=real;
+        let icon  = proy===0?'⏳':pctC>=95?'✅':pctC>=75?'⚠️':'🚨';
+        const nota = proy===0 && proyMes>0 ? `<span style="font-size:10px;color:var(--texto2)"> (cobra después del día ${diaHoy})</span>` : '';
+        tcProy+=proy; tcMes+=proyMes; tcReal+=real;
         html+=`<tr>
-          <td><b>${s}</b> <span style="color:var(--texto2);font-size:11px">${SNAMES[s]}</span></td>
+          <td><b>${s}</b> <span style="color:var(--texto2);font-size:11px">${SNAMES[s]}</span>${nota}</td>
+          <td class="num" style="color:var(--texto2)">${proyMes>0?fmt(proyMes):'—'}</td>
           <td class="num">${proy>0?fmt(proy):'—'}</td>
           <td class="num" style="font-weight:700;color:var(--verde)">${fmt(real)}</td>
-          <td class="num" style="color:${dif>=0?'var(--verde)':'var(--rojo)'};font-weight:700">${proy>0?(dif>=0?'+':'')+fmt(dif):'—'}</td>
           <td class="num" style="color:${color};font-weight:700">${icon} ${proy>0?pctC+'%':'—'}</td>
         </tr>`;
       }
       const tPctC = tcProy>0?Math.round(tcReal/tcProy*100):0;
-      const tDif  = tcReal-tcProy;
       html+=`<tr style="background:var(--gris);font-weight:700">
-        <td>TOTAL</td><td class="num">${fmt(tcProy)}</td>
+        <td>TOTAL</td>
+        <td class="num">${fmt(tcMes)}</td>
+        <td class="num">${fmt(tcProy)}</td>
         <td class="num" style="color:var(--verde)">${fmt(tcReal)}</td>
-        <td class="num" style="color:${tDif>=0?'var(--verde)':'var(--rojo)'}">${tDif>=0?'+':''}${fmt(tDif)}</td>
         <td class="num">${tPctC}%</td>
       </tr></tbody></table></div>`;
     }
