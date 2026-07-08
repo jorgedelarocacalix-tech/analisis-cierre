@@ -680,113 +680,83 @@ function renderVentas(entries){
     };
   }).filter(Boolean);
 
-  // Agrupar por nombre normalizado — construir mapa nombre_display
-  const normMap = {}; // normVend → primer nombre real encontrado
-  for(const r of dataRaw){
-    const n = normVend(r.vend);
-    if(!normMap[n]) normMap[n] = r.vend;
-  }
-  // Aplicar normalización a todos
-  const data = dataRaw.map(r=>({...r, vend: normMap[normVend(r.vend)]}));
-
-  // Agrupar por vendedor y por sucursal
-  const byVend = {};
-  const bySuc  = {};
+  // Agrupar por sucursal → vendedor (normalizado dentro de esa sucursal)
+  const bySuc = {};
   let totalGlobal = 0;
-  for(const r of data){
-    if(!byVend[r.vend]) byVend[r.vend]={total:0,items:0,productos:{},sucs:{}};
-    byVend[r.vend].total += r.monto;
-    byVend[r.vend].items++;
-    byVend[r.vend].sucs[r.suc] = (byVend[r.vend].sucs[r.suc]||0) + r.monto;
-    if(r.prod) byVend[r.vend].productos[r.prod]=(byVend[r.vend].productos[r.prod]||0)+r.monto;
-    if(!bySuc[r.suc]) bySuc[r.suc]={total:0,vends:new Set()};
-    bySuc[r.suc].total += r.monto;
-    bySuc[r.suc].vends.add(r.vend);
+  for(const r of dataRaw){
+    if(!bySuc[r.suc]) bySuc[r.suc]={total:0,vends:{},normMap:{}};
+    const s = bySuc[r.suc];
+    const n = normVend(r.vend);
+    if(!s.normMap[n]) s.normMap[n] = r.vend; // primer nombre encontrado
+    const vdisp = s.normMap[n];
+    if(!s.vends[vdisp]) s.vends[vdisp]={total:0,items:0,productos:{}};
+    s.vends[vdisp].total += r.monto;
+    s.vends[vdisp].items++;
+    if(r.prod) s.vends[vdisp].productos[r.prod]=(s.vends[vdisp].productos[r.prod]||0)+r.monto;
+    s.total += r.monto;
     totalGlobal += r.monto;
   }
-  const vendList = Object.entries(byVend).sort((a,b)=>b[1].total-a[1].total);
-  const topVend = vendList[0];
 
-  const metaPct = 1.10; // meta julio = junio + 10%
+  const metaPct = 1.10;
   const metaGlobal = totalGlobal * metaPct;
-  const promVend = vendList.length ? totalGlobal / vendList.length : 0;
+  const totalVends = Object.values(bySuc).reduce((s,v)=>s+Object.keys(v.vends).length,0);
 
-  // Badge de desempeño por vendedor
-  function badgeVend(total, i, n){
+  function badgeSuc(total,i,prom){
     if(i===0) return '<span style="background:#1E7A50;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">⭐ TOP</span>';
-    if(total >= promVend*0.9) return '<span style="background:#1A5CA8;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px">OK</span>';
+    if(total>=prom*0.9) return '<span style="background:#1A5CA8;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px">OK</span>';
     return '<span style="background:#C0392B;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px">⬇ MEJORAR</span>';
   }
 
+  // KPIs globales
   let h = `<div class="kpis">
-    <div class="kpi"><div class="kpi-l">Total Junio 2026</div><div class="kpi-v cv">${fmt(totalGlobal)}</div><div class="kpi-s">${data.length} líneas · ${vendList.length} vendedores</div></div>
+    <div class="kpi"><div class="kpi-l">Total Junio 2026</div><div class="kpi-v cv">${fmt(totalGlobal)}</div><div class="kpi-s">${dataRaw.length} ventas · ${totalVends} vendedores</div></div>
     <div class="kpi"><div class="kpi-l">Meta Julio (+10%)</div><div class="kpi-v cb">${fmt(metaGlobal)}</div><div class="kpi-s">+${fmt(metaGlobal-totalGlobal)} sobre junio</div></div>
-    <div class="kpi"><div class="kpi-l">Promedio por vendedor</div><div class="kpi-v">${fmt(promVend)}</div><div class="kpi-s">junio</div></div>
-    ${topVend?`<div class="kpi"><div class="kpi-l">⭐ Top Vendedor</div><div class="kpi-v cm" style="font-size:14px">${topVend[0]}</div><div class="kpi-s">${fmt(topVend[1].total)} · ${pct(topVend[1].total,totalGlobal)}%</div></div>`:''}
+    <div class="kpi"><div class="kpi-l">Sucursales cargadas</div><div class="kpi-v">${Object.keys(bySuc).length}</div></div>
   </div>`;
 
-  // Detectar posibles duplicados (mismo nombre normalizado con distinto display)
-  const normGroups = {};
-  for(const [norm,disp] of Object.entries(normMap)){
-    // Buscar otros que comparten primeras 4 letras
-    const prefix = norm.slice(0,4);
-    if(!normGroups[prefix]) normGroups[prefix]=[];
-    normGroups[prefix].push(disp);
-  }
-  const posiblesDup = Object.values(normGroups).filter(g=>g.length>1);
-  if(posiblesDup.length){
-    h+=`<div class="abox warning">⚠ Vendedores posiblemente duplicados — verificar si son la misma persona:<br>`+
-      posiblesDup.map(g=>`<b>${g.join(' / ')}</b>`).join(' &nbsp;·&nbsp; ')+`</div>`;
-  }
+  // Ranking por sucursal — sección independiente para cada una
+  for(const suc of SUCORDER){
+    const sd = bySuc[suc];
+    if(!sd) continue;
+    const vendList = Object.entries(sd.vends).sort((a,b)=>b[1].total-a[1].total);
+    const prom = vendList.length ? sd.total/vendList.length : 0;
+    const top = vendList[0];
 
-  h+=`<div class="stitle">Ranking vendedores — Junio 2026 · Meta Julio</div><div class="tw"><table>
-    <thead><tr><th>#</th><th>Vendedor</th><th class="num">Junio</th><th class="num">% total</th><th class="num">Meta Julio (+10%)</th><th class="num">Transacc.</th><th>Desempeño</th><th>Top productos</th></tr></thead><tbody>`;
-  vendList.forEach(([v,d],i)=>{
-    const topProds = Object.entries(d.productos).sort((a,b)=>b[1]-a[1]).slice(0,3)
-      .map(([p,m])=>`<span style="font-size:10px;background:#f0f0f0;border-radius:10px;padding:1px 6px;margin-right:3px">${p} <b>${fmt(m)}</b></span>`).join('');
-    const pctVal = pct(d.total,totalGlobal);
-    const meta = d.total * metaPct;
-    const bar = `<div style="height:4px;background:#eee;border-radius:2px;margin-top:3px"><div style="height:100%;border-radius:2px;background:var(--verde);width:${pctVal}%"></div></div>`;
-    h+=`<tr>
-      <td style="color:var(--texto2);font-size:13px;font-weight:700">${i+1}</td>
-      <td><b>${v}</b>${bar}</td>
-      <td class="num cv">${fmt(d.total)}</td>
-      <td class="num">${pctVal}%</td>
-      <td class="num cb" style="font-weight:700">${fmt(meta)}</td>
-      <td class="num">${d.items}</td>
-      <td>${badgeVend(d.total,i,vendList.length)}</td>
-      <td>${topProds||'—'}</td></tr>`;
-  });
-  // Fila total
-  h+=`<tr style="background:var(--gris);font-weight:700">
-    <td colspan="2">TOTAL</td>
-    <td class="num cv">${fmt(totalGlobal)}</td><td class="num">100%</td>
-    <td class="num cb">${fmt(metaGlobal)}</td>
-    <td class="num">${data.length}</td><td colspan="2"></td>
-  </tr></tbody></table></div>`;
+    h+=`<div class="stitle">${suc} — ${SNAMES[suc]} <span style="font-size:12px;color:var(--texto2);font-weight:400">Junio 2026 · Meta Julio +10%</span></div>`;
+    h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <div class="kpi" style="flex:1;min-width:160px"><div class="kpi-l">Total sucursal</div><div class="kpi-v cv">${fmt(sd.total)}</div></div>
+      <div class="kpi" style="flex:1;min-width:160px"><div class="kpi-l">Meta julio</div><div class="kpi-v cb">${fmt(sd.total*metaPct)}</div></div>
+      ${top?`<div class="kpi" style="flex:1;min-width:160px"><div class="kpi-l">⭐ Top</div><div class="kpi-v cm" style="font-size:13px">${top[0]}</div><div class="kpi-s">${fmt(top[1].total)}</div></div>`:''}
+    </div>`;
 
-  // Resumen por sucursal (si hay más de una)
-  const sucCargas = Object.keys(bySuc);
-  if(sucCargas.length>1){
-    h+=`<div class="stitle">Ventas por sucursal — Junio 2026</div><div class="tw"><table>
-      <thead><tr><th>Sucursal</th><th class="num">Vendido</th><th class="num">% total</th><th class="num">Vendedores</th><th class="num">Meta Julio</th></tr></thead><tbody>`;
-    for(const suc of SUCORDER){
-      const d=bySuc[suc]; if(!d) continue;
-      h+=`<tr><td><b>${suc}</b> <span style="color:var(--texto2);font-size:11px">${SNAMES[suc]||''}</span></td>
+    h+=`<div class="tw" style="margin-bottom:20px"><table>
+      <thead><tr><th>#</th><th>Vendedor</th><th class="num">Junio</th><th class="num">% sucursal</th><th class="num">Meta Julio</th><th class="num">Transacc.</th><th>Desempeño</th><th>Top productos</th></tr></thead><tbody>`;
+    vendList.forEach(([v,d],i)=>{
+      const topProds = Object.entries(d.productos).sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .map(([p,m])=>`<span style="font-size:10px;background:#f0f0f0;border-radius:10px;padding:1px 6px;margin-right:3px">${p} <b>${fmt(m)}</b></span>`).join('');
+      const pctVal = pct(d.total,sd.total);
+      const bar = `<div style="height:4px;background:#eee;border-radius:2px;margin-top:3px"><div style="height:100%;border-radius:2px;background:var(--verde);width:${pctVal}%"></div></div>`;
+      h+=`<tr>
+        <td style="color:var(--texto2);font-size:13px;font-weight:700">${i+1}</td>
+        <td><b>${v}</b>${bar}</td>
         <td class="num cv">${fmt(d.total)}</td>
-        <td class="num">${pct(d.total,totalGlobal)}%</td>
-        <td class="num">${d.vends.size}</td>
-        <td class="num cb">${fmt(d.total*metaPct)}</td></tr>`;
-    }
-    h+=`<tr style="background:var(--gris);font-weight:700"><td>TOTAL</td>
-      <td class="num cv">${fmt(totalGlobal)}</td><td class="num">100%</td>
-      <td class="num">${vendList.length}</td><td class="num cb">${fmt(metaGlobal)}</td>
+        <td class="num">${pctVal}%</td>
+        <td class="num cb" style="font-weight:700">${fmt(d.total*metaPct)}</td>
+        <td class="num">${d.items}</td>
+        <td>${badgeSuc(d.total,i,prom)}</td>
+        <td>${topProds||'—'}</td></tr>`;
+    });
+    h+=`<tr style="background:var(--gris);font-weight:700">
+      <td colspan="2">TOTAL ${suc}</td>
+      <td class="num cv">${fmt(sd.total)}</td><td class="num">100%</td>
+      <td class="num cb">${fmt(sd.total*metaPct)}</td>
+      <td class="num">${vendList.reduce((s,[,d])=>s+d.items,0)}</td><td colspan="2"></td>
     </tr></tbody></table></div>`;
   }
 
   // Top productos
   const byProd={};
-  for(const r of data){
+  for(const r of dataRaw){
     if(!r.prod) continue;
     if(!byProd[r.prod]) byProd[r.prod]={total:0,cant:0,cnt:0};
     byProd[r.prod].total+=r.monto; byProd[r.prod].cant+=r.cant; byProd[r.prod].cnt++;
