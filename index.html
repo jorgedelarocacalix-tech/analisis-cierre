@@ -267,7 +267,7 @@ async function cargarTodo(){
   const btn = document.getElementById('btnCargar');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try {
-    await Promise.all([fetchArqueos(), fetchCarteras(), fetchProyeccion()]);
+    await Promise.all([fetchArqueos(), fetchCarteras(), fetchProyeccion(), loadFromSupabase()]);
     renderResumen();
     renderCXC();
     renderProyeccion();
@@ -425,15 +425,49 @@ function diffChip(d){
 const xlsVentasSuc = {}; // {R1:rows, R2:rows, ...}
 const xlsInvSuc    = {};
 
+const MES_KEY = '2026-06';
+
+async function saveToSupabase(tabla, suc, rows){
+  const headers = rows[0] || [];
+  const dataRows = rows.slice(1);
+  await sb.from(tabla).upsert({mes_key: MES_KEY, sucursal: suc, rows: dataRows, headers, updated_at: new Date().toISOString()},{onConflict:'mes_key,sucursal'});
+}
+
+async function loadFromSupabase(){
+  const [rv, ri] = await Promise.all([
+    sb.from('cierre_ventas').select('sucursal,rows,headers,updated_at').eq('mes_key', MES_KEY),
+    sb.from('cierre_inventario').select('sucursal,rows,headers,updated_at').eq('mes_key', MES_KEY),
+  ]);
+  let ventasLoaded=0, invLoaded=0;
+  for(const d of (rv.data||[])){
+    const rows = [d.headers, ...d.rows];
+    xlsVentasSuc[d.sucursal] = rows;
+    // Marcar zona con fecha de carga
+    const lbl = document.getElementById('fV-'+d.sucursal+'-name');
+    if(lbl){ const dt=new Date(d.updated_at); lbl.textContent='✓ Guardado '+dt.toLocaleDateString('es-HN'); lbl.style.color='var(--verde)'; }
+    ventasLoaded++;
+  }
+  for(const d of (ri.data||[])){
+    const rows = [d.headers, ...d.rows];
+    xlsInvSuc[d.sucursal] = rows;
+    const lbl = document.getElementById('fI-'+d.sucursal+'-name');
+    if(lbl){ const dt=new Date(d.updated_at); lbl.textContent='✓ Guardado '+dt.toLocaleDateString('es-HN'); lbl.style.color='var(--verde)'; }
+    invLoaded++;
+  }
+  if(ventasLoaded) renderVentasAll();
+  if(invLoaded) renderInvAll();
+}
+
 function parseVentasSuc(suc){
   const file = document.getElementById('fV-'+suc).files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try{
       const wb = XLSX.read(e.target.result,{type:'array'});
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:'',raw:false});
       xlsVentasSuc[suc] = rows;
+      await saveToSupabase('cierre_ventas', suc, rows);
       renderVentasAll();
     }catch(err){ document.getElementById('ventasBody').innerHTML=`<div class="abox critica">Error: ${err.message}</div>`; }
   };
@@ -444,19 +478,20 @@ function parseInvSuc(suc){
   const file = document.getElementById('fI-'+suc).files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try{
       const wb = XLSX.read(e.target.result,{type:'array'});
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:'',raw:false});
       xlsInvSuc[suc] = rows;
+      await saveToSupabase('cierre_inventario', suc, rows);
       renderInvAll();
     }catch(err){ document.getElementById('invBody').innerHTML=`<div class="abox critica">Error: ${err.message}</div>`; }
   };
   reader.readAsArrayBuffer(file);
 }
 
-function parseVentas(){ /* legacy — no used */ }
-function parseInventario(){ /* legacy — no used */ }
+function parseVentas(){ /* legacy */ }
+function parseInventario(){ /* legacy */ }
 
 function renderVentasAll(){
   // Combina todos los archivos cargados, agrega columna sucursal
