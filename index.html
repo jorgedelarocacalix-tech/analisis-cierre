@@ -588,16 +588,23 @@ function parseInvSuc(suc){
 function parseVentas(){ /* legacy */ }
 function parseInventario(){ /* legacy */ }
 
+function detectHeaderRow(rows){
+  // Si la primera fila tiene menos de 3 celdas no vacías, es un título — usar la siguiente
+  for(let i=0;i<Math.min(4,rows.length);i++){
+    if(rows[i].filter(c=>String(c||'').trim()).length >= 3) return i;
+  }
+  return 0;
+}
+
 function renderVentasAll(){
-  // Combina todos los archivos cargados, agrega columna sucursal
   const allRows = [];
-  let headersRef = null;
   for(const suc of SUCORDER){
     const rows = xlsVentasSuc[suc];
     if(!rows||rows.length<2) continue;
-    if(!headersRef) headersRef = rows[0];
-    for(const r of rows.slice(1)){
-      if(r.some(c=>String(c).trim())) allRows.push({suc, row:r, headers:rows[0]});
+    const hi = detectHeaderRow(rows);
+    const headers = rows[hi];
+    for(const r of rows.slice(hi+1)){
+      if(r.some(c=>String(c||'').trim())) allRows.push({suc, row:r, headers});
     }
   }
   if(!allRows.length){
@@ -612,8 +619,10 @@ function renderInvAll(){
   for(const suc of SUCORDER){
     const rows = xlsInvSuc[suc];
     if(!rows||rows.length<2) continue;
-    for(const r of rows.slice(1)){
-      if(r.some(c=>String(c).trim())) allRows.push({suc, row:r, headers:rows[0]});
+    const hi = detectHeaderRow(rows);
+    const headers = rows[hi];
+    for(const r of rows.slice(hi+1)){
+      if(r.some(c=>String(c||'').trim())) allRows.push({suc, row:r, headers});
     }
   }
   if(!allRows.length){
@@ -632,8 +641,8 @@ function renderVentas(entries){
     const h=headers.map(x=>String(x).toLowerCase().trim());
     return {
       iVend:  findCol(h,['vendedor','asesor','agente','representante','nombre vendedor']),
-      iProd:  findCol(h,['producto','artículo','articulo','descripción','descripcion','item']),
-      iMonto: findCol(h,['monto','total','valor','importe','venta','precio total','total venta']),
+      iProd:  findCol(h,['producto','artículo','articulo','descripción','descripcion','item','modelo','model']),
+      iMonto: findCol(h,['total venta','monto','sub total','subtotal','total','valor','importe','venta','precio total']),
       iCant:  findCol(h,['cantidad','qty','cant','unidades']),
     };
   }
