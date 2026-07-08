@@ -105,6 +105,10 @@ tr:hover td{background:#fafaf8}
 
 /* DIFF CHIP */
 .diff-chip{font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px}
+/* MONITOR BTNS */
+.mon-btn{padding:5px 12px;border:1px solid var(--borde);border-radius:20px;background:var(--card);color:var(--texto);font-size:12px;cursor:pointer;transition:all 0.15s}
+.mon-btn:hover{border-color:var(--azul);color:var(--azul)}
+.mon-btn.active{background:var(--azul);color:#fff;border-color:var(--azul);font-weight:700}
 .diff-up{background:#D4EDDA;color:#155724}.diff-dn{background:#FADBD8;color:#922B21}.diff-eq{background:#f0f0f0;color:#888}
 
 /* sucursal row color */
@@ -248,8 +252,8 @@ const CARTERA_NAMES = {
 };
 const CARTERA_TO_SUC = {
   LA_ROCA_COMERCIAL_1:'R1',
-  LA_ROCA_MOTORS_BARRIO_ARRIBA_1:'R3',
-  LA_ROCA_MOTORS_LA_LIBERTAD_2:'R2',
+  LA_ROCA_MOTORS_BARRIO_ARRIBA_1:'R2',
+  LA_ROCA_MOTORS_LA_LIBERTAD_2:'R3',
   SU_MOTO_DANLI:'R5',
   SU_MUEBLE:'R4'
 };
@@ -540,157 +544,122 @@ function renderResumen(){
 
     // ── Monitor de cartera ──────────────────────────────────
     if(proyeccion.length){
-      // Acumular todos los clientes de todas las carteras
       const TRAMOS = ['MES','60','90','120','150','VENCIDO','INACTIVO'];
-      const tramoBySuc  = {}; // {R1: {MES:{saldo,mora,clientes}, ...}}
-      const tramoGlobal = {}; // {MES:{saldo,mora,clientes}, ...}
-      TRAMOS.forEach(t=>{ tramoGlobal[t]={saldo:0,mora:0,clientes:0}; });
+      const TRAMO_COLOR2 = {MES:'var(--verde)','60':'#C97A0A','90':'var(--ambar)',
+                            '120':'var(--rojo)','150':'var(--rojo)',VENCIDO:'#922B21',INACTIVO:'#555'};
+      const TRAMO_RIESGO = {MES:'Al corriente','60':'60 días','90':'90 días',
+                            '120':'120 días','150':'150 días',VENCIDO:'Vencido',INACTIVO:'Inactivo'};
 
-      let saldoTotal=0, moraTotal=0, clientesTotal=0;
-      let saldoEspTotal=0; // saldo esperado al fin de mes (proyectado)
+      // Calcular datos por sucursal
+      const dataSuc = {};
+      for(const s of SUCORDER) dataSuc[s]={saldo:0,mora:0,saldoEsp:0,clientes:0,abonos:agJul[s]?agJul[s].cob_abono:0,tramos:{}};
+      SUCORDER.forEach(s=>TRAMOS.forEach(t=>{ dataSuc[s].tramos[t]={saldo:0,mora:0,clientes:0}; }));
 
       for(const item of proyeccion){
         const suc = CARTERA_TO_SUC[item.cartera_id];
-        if(!tramoBySuc[suc]) {
-          tramoBySuc[suc]={};
-          TRAMOS.forEach(t=>{ tramoBySuc[suc][t]={saldo:0,mora:0,clientes:0}; });
-        }
+        if(!suc) continue;
         for(const c of (item.datos||[])){
-          const t      = String(c.mora||'MES').toUpperCase();
-          const saldo  = Number(c.saldo||0);
-          const mora   = Number(c.moraVal||0);
-          const saldoE = Number(c.saldoEsperado||0);
-          const tramo  = TRAMOS.includes(t) ? t : 'MES';
-
-          saldoTotal   += saldo;
-          moraTotal    += mora;
-          saldoEspTotal+= saldoE;
-          clientesTotal++;
-
-          tramoGlobal[tramo].saldo    += saldo;
-          tramoGlobal[tramo].mora     += mora;
-          tramoGlobal[tramo].clientes++;
-          if(suc){
-            tramoBySuc[suc][tramo].saldo    += saldo;
-            tramoBySuc[suc][tramo].mora     += mora;
-            tramoBySuc[suc][tramo].clientes++;
-          }
+          const t = TRAMOS.includes(String(c.mora||'').toUpperCase()) ? String(c.mora).toUpperCase() : 'MES';
+          const saldo = Number(c.saldo||0), mora = Number(c.moraVal||0), saldoE = Number(c.saldoEsperado||0);
+          dataSuc[suc].saldo    += saldo;
+          dataSuc[suc].mora     += mora;
+          dataSuc[suc].saldoEsp += saldoE;
+          dataSuc[suc].clientes++;
+          dataSuc[suc].tramos[t].saldo    += saldo;
+          dataSuc[suc].tramos[t].mora     += mora;
+          dataSuc[suc].tramos[t].clientes++;
         }
       }
 
-      const pctMora = saldoTotal>0 ? moraTotal/saldoTotal*100 : 0;
-      const recuperacionEsp = saldoTotal - saldoEspTotal; // cuánto se espera recuperar este mes
-      const recuperacionReal = SUCORDER.reduce((s,k)=> s + (agJul[k]?agJul[k].cob_abono:0), 0);
+      // Totales globales
+      const glob = {saldo:0,mora:0,saldoEsp:0,clientes:0,abonos:0,tramos:{}};
+      TRAMOS.forEach(t=>{ glob.tramos[t]={saldo:0,mora:0,clientes:0}; });
+      for(const s of SUCORDER){
+        const d = dataSuc[s];
+        glob.saldo+=d.saldo; glob.mora+=d.mora; glob.saldoEsp+=d.saldoEsp;
+        glob.clientes+=d.clientes; glob.abonos+=d.abonos;
+        TRAMOS.forEach(t=>{
+          glob.tramos[t].saldo    += d.tramos[t].saldo;
+          glob.tramos[t].mora     += d.tramos[t].mora;
+          glob.tramos[t].clientes += d.tramos[t].clientes;
+        });
+      }
 
-      // Color del % mora
-      const moraColor = pctMora<5?'var(--verde)':pctMora<15?'var(--ambar)':'var(--rojo)';
+      function kpisMonitor(d){
+        const pctM = d.saldo>0?d.mora/d.saldo*100:0;
+        const mc   = pctM<5?'var(--verde)':pctM<15?'var(--ambar)':'var(--rojo)';
+        const recEsp  = d.saldo - d.saldoEsp;
+        const pctRec  = recEsp>0?Math.round(d.abonos/recEsp*100):0;
+        const rcColor = pctRec>=75?'var(--verde)':'var(--rojo)';
+        return `<div class="kpis" style="margin-bottom:10px">
+          <div class="kpi"><div class="kpi-l">Saldo cartera</div><div class="kpi-v cb">${fmt(d.saldo)}</div><div class="kpi-s">${d.clientes} clientes</div></div>
+          <div class="kpi"><div class="kpi-l">Mora total</div><div class="kpi-v" style="color:${mc}">${fmt(d.mora)}</div><div class="kpi-s" style="color:${mc};font-weight:700">${pctM.toFixed(1)}% del saldo</div></div>
+          <div class="kpi"><div class="kpi-l">Recuperación proyectada julio</div><div class="kpi-v">${fmt(recEsp)}</div></div>
+          <div class="kpi"><div class="kpi-l">Cobrado real (abonos)</div><div class="kpi-v cv">${fmt(d.abonos)}</div><div class="kpi-s" style="color:${recEsp>0?rcColor:'var(--texto2)'};">${recEsp>0?pctRec+'% de lo proyectado':'—'}</div></div>
+        </div>`;
+      }
 
+      function tramosTable(d){
+        const mt = d.mora;
+        let rows='';
+        for(const t of TRAMOS){
+          const td=d.tramos[t]; if(!td.clientes) continue;
+          const pctT=mt>0?Math.round(td.mora/mt*100):0;
+          rows+=`<tr>
+            <td style="font-weight:700;color:${TRAMO_COLOR2[t]}">${TRAMO_RIESGO[t]}</td>
+            <td class="num">${td.clientes}</td>
+            <td class="num" style="font-weight:700;color:${TRAMO_COLOR2[t]}">${fmt(td.mora)}</td>
+            <td class="num">
+              <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">
+                <div style="width:50px;height:5px;background:#eee;border-radius:3px">
+                  <div style="width:${pctT}%;height:100%;background:${TRAMO_COLOR2[t]};border-radius:3px"></div>
+                </div>${pctT}%
+              </div>
+            </td>
+          </tr>`;
+        }
+        return `<div class="tw" style="margin-bottom:12px"><table>
+          <thead><tr><th>Tramo</th><th class="num">Clientes</th><th class="num">Mora</th><th class="num">% mora</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`;
+      }
+
+      // Botones filtro
       html += `<div class="stitle" style="margin-top:20px">Monitor de cartera — Julio 2026</div>
-      <div class="kpis" style="margin-bottom:12px">
-        <div class="kpi">
-          <div class="kpi-l">Saldo total cartera</div>
-          <div class="kpi-v cb">${fmt(saldoTotal)}</div>
-          <div class="kpi-s">${clientesTotal} clientes activos</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-l">Mora total</div>
-          <div class="kpi-v" style="color:${moraColor};font-size:20px">${fmt(moraTotal)}</div>
-          <div class="kpi-s" style="color:${moraColor};font-weight:700">${pctMora.toFixed(1)}% del saldo</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-l">Recuperación proyectada julio</div>
-          <div class="kpi-v">${fmt(recuperacionEsp)}</div>
-          <div class="kpi-s">según proyección de asesores</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-l">Recuperado real (abonos)</div>
-          <div class="kpi-v cv">${fmt(recuperacionReal)}</div>
-          <div class="kpi-s" style="color:${recuperacionEsp>0?(recuperacionReal/recuperacionEsp>=0.75?'var(--verde)':'var(--rojo)'):'var(--texto2)'}">
-            ${recuperacionEsp>0?Math.round(recuperacionReal/recuperacionEsp*100)+'% de lo proyectado':'—'}
-          </div>
-        </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="monBtns">
+        <button class="mon-btn active" onclick="filterMon('ALL',this)">Todas</button>
+        ${SUCORDER.filter(s=>dataSuc[s].clientes>0).map(s=>`<button class="mon-btn" onclick="filterMon('${s}',this)">${s} — ${SNAMES[s]}</button>`).join('')}
       </div>`;
 
-      // Mora por tramo
-      html += `<div class="tw" style="margin-bottom:14px"><table>
-        <thead><tr>
-          <th>Tramo mora</th>
-          <th class="num">Clientes</th>
-          <th class="num">Saldo en mora</th>
-          <th class="num">% del total mora</th>
-          <th>Riesgo</th>
-        </tr></thead><tbody>`;
+      // Sección global
+      html += `<div id="mon-ALL">${kpisMonitor(glob)}${tramosTable(glob)}</div>`;
 
-      const TRAMO_RIESGO = {MES:'Bajo',  '60':'Medio', '90':'Medio-alto',
-                            '120':'Alto', '150':'Crítico', VENCIDO:'Crítico', INACTIVO:'Pérdida'};
-      const TRAMO_COLOR2 = {MES:'var(--verde)', '60':'#C97A0A', '90':'var(--ambar)',
-                            '120':'var(--rojo)', '150':'var(--rojo)', VENCIDO:'#922B21', INACTIVO:'#555'};
-
-      for(const t of TRAMOS){
-        const d = tramoGlobal[t];
-        if(!d.clientes) continue;
-        const pctT = moraTotal>0 ? Math.round(d.mora/moraTotal*100) : 0;
-        html+=`<tr>
-          <td style="font-weight:700;color:${TRAMO_COLOR2[t]}">${t==='MES'?'Al corriente (MES)':t+' días'}</td>
-          <td class="num">${d.clientes}</td>
-          <td class="num" style="font-weight:700;color:${TRAMO_COLOR2[t]}">${fmt(d.mora)}</td>
-          <td class="num">
-            <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
-              <div style="width:60px;height:6px;background:#eee;border-radius:3px">
-                <div style="width:${pctT}%;height:100%;background:${TRAMO_COLOR2[t]};border-radius:3px"></div>
-              </div>
-              ${pctT}%
-            </div>
-          </td>
-          <td style="color:${TRAMO_COLOR2[t]};font-size:11px">${TRAMO_RIESGO[t]||''}</td>
-        </tr>`;
-      }
-      html+=`<tr style="background:var(--gris);font-weight:700">
-        <td>TOTAL MORA</td>
-        <td class="num">${clientesTotal}</td>
-        <td class="num" style="color:${moraColor}">${fmt(moraTotal)}</td>
-        <td class="num">${pctMora.toFixed(1)}%</td><td></td>
-      </tr></tbody></table></div>`;
-
-      // Mora por sucursal
-      html += `<div class="tw"><table>
-        <thead><tr>
-          <th>Sucursal</th>
-          <th class="num">Saldo cartera</th>
-          <th class="num">Mora</th>
-          <th class="num">% mora</th>
-          <th class="num">Clientes corriente</th>
-          <th class="num">Clientes mora</th>
-          <th>Salud</th>
-        </tr></thead><tbody>`;
-
+      // Sección por sucursal
       for(const s of SUCORDER){
-        const td = tramoBySuc[s]; if(!td) continue;
-        let sSaldo=0, sMora=0, sCorr=0, sMoraC=0;
-        for(const t of TRAMOS){
-          sSaldo += td[t].saldo;
-          sMora  += td[t].mora;
-          if(t==='MES') sCorr  += td[t].clientes;
-          else          sMoraC += td[t].clientes;
-        }
-        const pS = sSaldo>0?sMora/sSaldo*100:0;
-        const sc = pS<5?'var(--verde)':pS<15?'var(--ambar)':'var(--rojo)';
-        const si = pS<5?'✅ Sana':pS<15?'⚠️ Vigilar':'🚨 Atención';
-        html+=`<tr>
-          <td><b>${s}</b> <span style="color:var(--texto2);font-size:11px">${SNAMES[s]}</span></td>
-          <td class="num cb">${fmt(sSaldo)}</td>
-          <td class="num" style="color:${sc};font-weight:700">${fmt(sMora)}</td>
-          <td class="num" style="color:${sc};font-weight:700">${pS.toFixed(1)}%</td>
-          <td class="num" style="color:var(--verde)">${sCorr}</td>
-          <td class="num" style="color:${sMoraC>0?'var(--rojo)':'var(--texto2)'}">${sMoraC}</td>
-          <td style="color:${sc}">${si}</td>
-        </tr>`;
+        const d = dataSuc[s]; if(!d.clientes) continue;
+        const pS=d.saldo>0?d.mora/d.saldo*100:0;
+        const sc=pS<5?'var(--verde)':pS<15?'var(--ambar)':'var(--rojo)';
+        const si=pS<5?'✅ Sana':pS<15?'⚠️ Vigilar':'🚨 Atención';
+        html+=`<div id="mon-${s}" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:15px;font-weight:700">${s} — ${SNAMES[s]}</span>
+            <span style="color:${sc};font-weight:700">${si}</span>
+          </div>
+          ${kpisMonitor(d)}${tramosTable(d)}
+        </div>`;
       }
-      html+=`</tbody></table></div>`;
     }
   }
 
   el.innerHTML = html;
+}
+
+function filterMon(suc, btn){
+  document.querySelectorAll('.mon-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  ['ALL','R1','R2','R3','R4','R5'].forEach(id=>{
+    const el = document.getElementById('mon-'+id);
+    if(el) el.style.display = (id===suc) ? '' : 'none';
+  });
 }
 
 function diffChip(d){
