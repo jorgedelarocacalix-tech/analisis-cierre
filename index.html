@@ -660,17 +660,34 @@ function renderVentas(entries){
     };
   }
 
-  // Construir data normalizada
-  const data = entries.map(({suc,row,headers})=>{
+  // Normaliza nombre de vendedor: quita espacios, puntos, mayúsculas
+  // para agrupar "Kmejia" con "K MEJIA", "SHERNANDEZ" con "S HERNANDEZ", etc.
+  function normVend(v){
+    return v.toLowerCase().replace(/[\s\.\-_]/g,'');
+  }
+
+  // Construir data normalizada — omite filas sin vendedor (totales/blancos)
+  const dataRaw = entries.map(({suc,row,headers})=>{
     const idx = getIdx(headers);
+    const vend = idx.iVend>=0 ? String(row[idx.iVend]||'').trim() : '';
+    if(!vend) return null; // saltar filas sin vendedor (totales, blancos)
     return {
       suc,
-      vend:  idx.iVend>=0  ? String(row[idx.iVend]||'').trim()||'Sin vendedor' : 'Sin vendedor',
+      vend,
       prod:  idx.iProd>=0  ? String(row[idx.iProd]||'').trim() : '',
       monto: idx.iMonto>=0 ? parseFloat(String(row[idx.iMonto]).replace(/[,L$\s]/g,''))||0 : 0,
       cant:  idx.iCant>=0  ? parseFloat(String(row[idx.iCant]).replace(/[,\s]/g,''))||0 : 0,
     };
-  });
+  }).filter(Boolean);
+
+  // Agrupar por nombre normalizado — construir mapa nombre_display
+  const normMap = {}; // normVend → primer nombre real encontrado
+  for(const r of dataRaw){
+    const n = normVend(r.vend);
+    if(!normMap[n]) normMap[n] = r.vend;
+  }
+  // Aplicar normalización a todos
+  const data = dataRaw.map(r=>({...r, vend: normMap[normVend(r.vend)]}));
 
   // Agrupar por vendedor y por sucursal
   const byVend = {};
@@ -708,7 +725,19 @@ function renderVentas(entries){
     ${topVend?`<div class="kpi"><div class="kpi-l">⭐ Top Vendedor</div><div class="kpi-v cm" style="font-size:14px">${topVend[0]}</div><div class="kpi-s">${fmt(topVend[1].total)} · ${pct(topVend[1].total,totalGlobal)}%</div></div>`:''}
   </div>`;
 
-  if(data.some(r=>r.vend==='Sin vendedor')) h+=`<div class="abox warning">⚠ Algunos registros no tienen vendedor detectado. Verifica las columnas del Excel.</div>`;
+  // Detectar posibles duplicados (mismo nombre normalizado con distinto display)
+  const normGroups = {};
+  for(const [norm,disp] of Object.entries(normMap)){
+    // Buscar otros que comparten primeras 4 letras
+    const prefix = norm.slice(0,4);
+    if(!normGroups[prefix]) normGroups[prefix]=[];
+    normGroups[prefix].push(disp);
+  }
+  const posiblesDup = Object.values(normGroups).filter(g=>g.length>1);
+  if(posiblesDup.length){
+    h+=`<div class="abox warning">⚠ Vendedores posiblemente duplicados — verificar si son la misma persona:<br>`+
+      posiblesDup.map(g=>`<b>${g.join(' / ')}</b>`).join(' &nbsp;·&nbsp; ')+`</div>`;
+  }
 
   h+=`<div class="stitle">Ranking vendedores — Junio 2026 · Meta Julio</div><div class="tw"><table>
     <thead><tr><th>#</th><th>Vendedor</th><th class="num">Junio</th><th class="num">% total</th><th class="num">Meta Julio (+10%)</th><th class="num">Transacc.</th><th>Desempeño</th><th>Top productos</th></tr></thead><tbody>`;
