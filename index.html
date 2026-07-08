@@ -515,11 +515,10 @@ function renderResumen(){
 
     // ── Cobros proyectados vs real ────────────────────────────
     if(proyeccion.length){
+      // Solo ABONO — lo que baja de cuentas por cobrar, sin primas ni contado
       const cobJulBySuc = {};
-      for(const a of arqueosJulio){
-        const s = a.sucursal;
-        if(!cobJulBySuc[s]) cobJulBySuc[s]=0;
-        cobJulBySuc[s] += Number(a.cobrado||0);
+      for(const s of SUCORDER){
+        cobJulBySuc[s] = agJul[s] ? agJul[s].cob_abono : 0;
       }
       const diaHoy = hoy.getDate();
 
@@ -528,7 +527,7 @@ function renderResumen(){
         <thead><tr>
           <th>Cartera</th>
           <th class="num">Proyectado al día ${diaHoy}</th>
-          <th class="num">Cobrado real</th>
+          <th class="num">Abonos CXC reales</th>
           <th class="num">Diferencia</th>
           <th class="num">% cumplido</th>
           <th>Estado</th>
