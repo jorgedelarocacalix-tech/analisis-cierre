@@ -537,6 +537,157 @@ function renderResumen(){
         <td class="num">${tPctC}%</td>
       </tr></tbody></table></div>`;
     }
+
+    // ── Monitor de cartera ──────────────────────────────────
+    if(proyeccion.length){
+      // Acumular todos los clientes de todas las carteras
+      const TRAMOS = ['MES','60','90','120','150','VENCIDO','INACTIVO'];
+      const tramoBySuc  = {}; // {R1: {MES:{saldo,mora,clientes}, ...}}
+      const tramoGlobal = {}; // {MES:{saldo,mora,clientes}, ...}
+      TRAMOS.forEach(t=>{ tramoGlobal[t]={saldo:0,mora:0,clientes:0}; });
+
+      let saldoTotal=0, moraTotal=0, clientesTotal=0;
+      let saldoEspTotal=0; // saldo esperado al fin de mes (proyectado)
+
+      for(const item of proyeccion){
+        const suc = CARTERA_TO_SUC[item.cartera_id];
+        if(!tramoBySuc[suc]) {
+          tramoBySuc[suc]={};
+          TRAMOS.forEach(t=>{ tramoBySuc[suc][t]={saldo:0,mora:0,clientes:0}; });
+        }
+        for(const c of (item.datos||[])){
+          const t      = String(c.mora||'MES').toUpperCase();
+          const saldo  = Number(c.saldo||0);
+          const mora   = Number(c.moraVal||0);
+          const saldoE = Number(c.saldoEsperado||0);
+          const tramo  = TRAMOS.includes(t) ? t : 'MES';
+
+          saldoTotal   += saldo;
+          moraTotal    += mora;
+          saldoEspTotal+= saldoE;
+          clientesTotal++;
+
+          tramoGlobal[tramo].saldo    += saldo;
+          tramoGlobal[tramo].mora     += mora;
+          tramoGlobal[tramo].clientes++;
+          if(suc){
+            tramoBySuc[suc][tramo].saldo    += saldo;
+            tramoBySuc[suc][tramo].mora     += mora;
+            tramoBySuc[suc][tramo].clientes++;
+          }
+        }
+      }
+
+      const pctMora = saldoTotal>0 ? moraTotal/saldoTotal*100 : 0;
+      const recuperacionEsp = saldoTotal - saldoEspTotal; // cuánto se espera recuperar este mes
+      const recuperacionReal = tcReal; // abonos reales acumulados julio
+
+      // Color del % mora
+      const moraColor = pctMora<5?'var(--verde)':pctMora<15?'var(--ambar)':'var(--rojo)';
+
+      html += `<div class="stitle" style="margin-top:20px">Monitor de cartera — Julio 2026</div>
+      <div class="kpis" style="margin-bottom:12px">
+        <div class="kpi">
+          <div class="kpi-l">Saldo total cartera</div>
+          <div class="kpi-v cb">${fmt(saldoTotal)}</div>
+          <div class="kpi-s">${clientesTotal} clientes activos</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Mora total</div>
+          <div class="kpi-v" style="color:${moraColor};font-size:20px">${fmt(moraTotal)}</div>
+          <div class="kpi-s" style="color:${moraColor};font-weight:700">${pctMora.toFixed(1)}% del saldo</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Recuperación proyectada julio</div>
+          <div class="kpi-v">${fmt(recuperacionEsp)}</div>
+          <div class="kpi-s">según proyección de asesores</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Recuperado real (abonos)</div>
+          <div class="kpi-v cv">${fmt(recuperacionReal)}</div>
+          <div class="kpi-s" style="color:${recuperacionEsp>0?(recuperacionReal/recuperacionEsp>=0.75?'var(--verde)':'var(--rojo)'):'var(--texto2)'}">
+            ${recuperacionEsp>0?Math.round(recuperacionReal/recuperacionEsp*100)+'% de lo proyectado':'—'}
+          </div>
+        </div>
+      </div>`;
+
+      // Mora por tramo
+      html += `<div class="tw" style="margin-bottom:14px"><table>
+        <thead><tr>
+          <th>Tramo mora</th>
+          <th class="num">Clientes</th>
+          <th class="num">Saldo en mora</th>
+          <th class="num">% del total mora</th>
+          <th>Riesgo</th>
+        </tr></thead><tbody>`;
+
+      const TRAMO_RIESGO = {MES:'Bajo',  '60':'Medio', '90':'Medio-alto',
+                            '120':'Alto', '150':'Crítico', VENCIDO:'Crítico', INACTIVO:'Pérdida'};
+      const TRAMO_COLOR2 = {MES:'var(--verde)', '60':'#C97A0A', '90':'var(--ambar)',
+                            '120':'var(--rojo)', '150':'var(--rojo)', VENCIDO:'#922B21', INACTIVO:'#555'};
+
+      for(const t of TRAMOS){
+        const d = tramoGlobal[t];
+        if(!d.clientes) continue;
+        const pctT = moraTotal>0 ? Math.round(d.mora/moraTotal*100) : 0;
+        html+=`<tr>
+          <td style="font-weight:700;color:${TRAMO_COLOR2[t]}">${t==='MES'?'Al corriente (MES)':t+' días'}</td>
+          <td class="num">${d.clientes}</td>
+          <td class="num" style="font-weight:700;color:${TRAMO_COLOR2[t]}">${fmt(d.mora)}</td>
+          <td class="num">
+            <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+              <div style="width:60px;height:6px;background:#eee;border-radius:3px">
+                <div style="width:${pctT}%;height:100%;background:${TRAMO_COLOR2[t]};border-radius:3px"></div>
+              </div>
+              ${pctT}%
+            </div>
+          </td>
+          <td style="color:${TRAMO_COLOR2[t]};font-size:11px">${TRAMO_RIESGO[t]||''}</td>
+        </tr>`;
+      }
+      html+=`<tr style="background:var(--gris);font-weight:700">
+        <td>TOTAL MORA</td>
+        <td class="num">${clientesTotal}</td>
+        <td class="num" style="color:${moraColor}">${fmt(moraTotal)}</td>
+        <td class="num">${pctMora.toFixed(1)}%</td><td></td>
+      </tr></tbody></table></div>`;
+
+      // Mora por sucursal
+      html += `<div class="tw"><table>
+        <thead><tr>
+          <th>Sucursal</th>
+          <th class="num">Saldo cartera</th>
+          <th class="num">Mora</th>
+          <th class="num">% mora</th>
+          <th class="num">Clientes corriente</th>
+          <th class="num">Clientes mora</th>
+          <th>Salud</th>
+        </tr></thead><tbody>`;
+
+      for(const s of SUCORDER){
+        const td = tramoBySuc[s]; if(!td) continue;
+        let sSaldo=0, sMora=0, sCorr=0, sMoraC=0;
+        for(const t of TRAMOS){
+          sSaldo += td[t].saldo;
+          sMora  += td[t].mora;
+          if(t==='MES') sCorr  += td[t].clientes;
+          else          sMoraC += td[t].clientes;
+        }
+        const pS = sSaldo>0?sMora/sSaldo*100:0;
+        const sc = pS<5?'var(--verde)':pS<15?'var(--ambar)':'var(--rojo)';
+        const si = pS<5?'✅ Sana':pS<15?'⚠️ Vigilar':'🚨 Atención';
+        html+=`<tr>
+          <td><b>${s}</b> <span style="color:var(--texto2);font-size:11px">${SNAMES[s]}</span></td>
+          <td class="num cb">${fmt(sSaldo)}</td>
+          <td class="num" style="color:${sc};font-weight:700">${fmt(sMora)}</td>
+          <td class="num" style="color:${sc};font-weight:700">${pS.toFixed(1)}%</td>
+          <td class="num" style="color:var(--verde)">${sCorr}</td>
+          <td class="num" style="color:${sMoraC>0?'var(--rojo)':'var(--texto2)'}">${sMoraC}</td>
+          <td style="color:${sc}">${si}</td>
+        </tr>`;
+      }
+      html+=`</tbody></table></div>`;
+    }
   }
 
   el.innerHTML = html;
