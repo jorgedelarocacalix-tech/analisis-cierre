@@ -580,7 +580,7 @@ function renderResumen(){
 
       const pctMora = saldoTotal>0 ? moraTotal/saldoTotal*100 : 0;
       const recuperacionEsp = saldoTotal - saldoEspTotal; // cuánto se espera recuperar este mes
-      const recuperacionReal = tcReal; // abonos reales acumulados julio
+      const recuperacionReal = SUCORDER.reduce((s,k)=> s + (agJul[k]?agJul[k].cob_abono:0), 0);
 
       // Color del % mora
       const moraColor = pctMora<5?'var(--verde)':pctMora<15?'var(--ambar)':'var(--rojo)';
