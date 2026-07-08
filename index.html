@@ -523,8 +523,9 @@ const xlsInvSuc    = {};
 const MES_KEY = '2026-06';
 
 async function saveToSupabase(tabla, suc, rows){
-  const headers = rows[0] || [];
-  const dataRows = rows.slice(1);
+  const hi = detectHeaderRow(rows);
+  const headers = rows[hi] || [];
+  const dataRows = rows.slice(hi+1);
   await sb.from(tabla).upsert({mes_key: MES_KEY, sucursal: suc, rows: dataRows, headers, updated_at: new Date().toISOString()},{onConflict:'mes_key,sucursal'});
 }
 
@@ -536,6 +537,7 @@ async function loadFromSupabase(){
   let ventasLoaded=0, invLoaded=0;
   for(const d of (rv.data||[])){
     const rows = [d.headers, ...d.rows];
+    rows._fromSupabase = true;
     xlsVentasSuc[d.sucursal] = rows;
     // Marcar zona con fecha de carga
     const lbl = document.getElementById('fV-'+d.sucursal+'-name');
@@ -589,9 +591,18 @@ function parseVentas(){ /* legacy */ }
 function parseInventario(){ /* legacy */ }
 
 function detectHeaderRow(rows){
-  // Si la primera fila tiene menos de 3 celdas no vacías, es un título — usar la siguiente
-  for(let i=0;i<Math.min(4,rows.length);i++){
-    if(rows[i].filter(c=>String(c||'').trim()).length >= 3) return i;
+  // Busca la primera fila que tenga al menos 2 palabras clave de columnas típicas
+  const COL_KEYS = ['vendedor','asesor','cliente','nombre','producto','artículo','articulo',
+    'modelo','total venta','sub total','importe','monto','precio','cantidad','fecha',
+    'articulo','financiamiento','compra','tipo'];
+  for(let i=0;i<Math.min(5,rows.length);i++){
+    const cells = rows[i].map(c=>String(c||'').toLowerCase().trim());
+    const hits = cells.filter(c=>c && COL_KEYS.some(k=>c===k||c===k.replace(' ',''))).length;
+    if(hits >= 2) return i;
+  }
+  // Fallback: primera fila con 4+ celdas no vacías
+  for(let i=0;i<Math.min(5,rows.length);i++){
+    if(rows[i].filter(c=>String(c||'').trim()).length >= 4) return i;
   }
   return 0;
 }
@@ -601,7 +612,9 @@ function renderVentasAll(){
   for(const suc of SUCORDER){
     const rows = xlsVentasSuc[suc];
     if(!rows||rows.length<2) continue;
-    const hi = detectHeaderRow(rows);
+    // Si viene de Supabase, rows[0] ya es el header real
+    // Si viene de upload fresco, detectar header
+    const hi = (rows._fromSupabase) ? 0 : detectHeaderRow(rows);
     const headers = rows[hi];
     for(const r of rows.slice(hi+1)){
       if(r.some(c=>String(c||'').trim())) allRows.push({suc, row:r, headers});
