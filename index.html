@@ -513,7 +513,7 @@ function renderResumen(){
     }
     html += `</div>`;
 
-    // ── Cobros proyectados por fecha ──────────────────────────
+    // ── Cobros proyectados vs real ────────────────────────────
     if(proyeccion.length){
       const cobJulBySuc = {};
       for(const a of arqueosJulio){
@@ -521,117 +521,61 @@ function renderResumen(){
         if(!cobJulBySuc[s]) cobJulBySuc[s]=0;
         cobJulBySuc[s] += Number(a.cobrado||0);
       }
+      const diaHoy = hoy.getDate();
 
-      html += `<div class="stitle" style="margin-top:8px">📅 Calendario de cobros proyectados — Julio 2026</div>`;
+      html += `<div class="stitle" style="margin-top:8px">Cobros — proyectado vs real al día ${diaHoy} de julio</div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Cartera</th>
+          <th class="num">Proyectado al día ${diaHoy}</th>
+          <th class="num">Cobrado real</th>
+          <th class="num">Diferencia</th>
+          <th class="num">% cumplido</th>
+          <th>Estado</th>
+        </tr></thead><tbody>`;
 
+      let tProy=0, tReal=0;
       for(const item of proyeccion){
         const datos = item.datos || [];
-        if(!datos.length) continue;
         const cid = item.cartera_id;
-        const cname = CARTERA_NAMES[cid] || cid;
         const suc = CARTERA_TO_SUC[cid];
 
-        // Agrupar por día
-        const byDia = {};
-        for(const c of datos){
-          const dia = Number(c.diaAsesor || 0);
-          if(!dia) continue;
-          if(!byDia[dia]) byDia[dia]={monto:0,clientes:0,nombres:[]};
-          byDia[dia].monto   += Number(c.montoAsesor||0);
-          byDia[dia].clientes++;
-          if(byDia[dia].nombres.length < 3) byDia[dia].nombres.push(c.nombre);
-        }
-
-        const diasOrden = Object.keys(byDia).map(Number).sort((a,b)=>a-b);
-        const totProy = diasOrden.reduce((s,d)=>s+byDia[d].monto, 0);
-        if(totProy === 0) continue;
-
-        // Acumulado hasta hoy (días ya pasados según proyección)
-        const maxDia = hoy.getDate();
-        const cobProy = diasOrden.filter(d=>d<=maxDia).reduce((s,d)=>s+byDia[d].monto,0);
+        // Sumar solo clientes con diaAsesor <= hoy
+        const cobProy = datos.reduce((s,c)=>{
+          const dia = Number(c.diaAsesor||0);
+          return s + (dia>0 && dia<=diaHoy ? Number(c.montoAsesor||0) : 0);
+        }, 0);
         const cobReal = suc ? (cobJulBySuc[suc]||0) : 0;
-        const pctProy = totProy > 0 ? cobProy/totProy : 0;
-        const pctReal = cobProy > 0 ? cobReal/cobProy : 0;
+        const dif = cobReal - cobProy;
+        const pctC = cobProy > 0 ? Math.round(cobReal/cobProy*100) : 0;
 
-        // Rangos: 1-10, 11-19, 20-31
-        const rango = [[1,10],[11,19],[20,31]];
-        const rangoTotales = rango.map(([a,b])=>diasOrden.filter(d=>d>=a&&d<=b).reduce((s,d)=>s+byDia[d].monto,0));
-        const maxRango = Math.max(...rangoTotales, 1);
+        let icon, color;
+        if(cobProy===0){ icon='—'; color='var(--texto2)'; }
+        else if(pctC>=95){ icon='✅'; color='var(--verde)'; }
+        else if(pctC>=75){ icon='⚠️'; color='var(--ambar)'; }
+        else { icon='🚨'; color='var(--rojo)'; }
 
-        // Bar width por día para el timeline
-        const maxDiaVal = Math.max(...diasOrden.map(d=>byDia[d].monto), 1);
-
-        let statusColor, statusIcon, statusTxt;
-        if(!suc){
-          statusColor='var(--texto2)'; statusIcon=''; statusTxt='Sin comparación arqueos';
-        } else if(cobProy===0){
-          statusColor='var(--texto2)'; statusIcon='⏳'; statusTxt='Aún no hay cobros proyectados para días pasados';
-        } else {
-          const ratio = cobReal/cobProy;
-          if(ratio>=0.95){ statusColor='var(--verde)'; statusIcon='✅'; statusTxt=`Cobro al ritmo esperado`; }
-          else if(ratio>=0.75){ statusColor='var(--ambar)'; statusIcon='⚠️'; statusTxt=`Cobro ${Math.round(ratio*100)}% de lo esperado — revisar cartera`; }
-          else { statusColor='var(--rojo)'; statusIcon='🚨'; statusTxt=`Cobro bajo (${Math.round(ratio*100)}% de ${fmt(cobProy)} esperado) — presionar`; }
-        }
-
-        html += `<div style="background:var(--card);border:1px solid var(--borde);border-radius:10px;padding:14px;margin-bottom:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-            <span style="font-weight:700;font-size:14px">${cname}</span>
-            <span style="font-size:11px;color:var(--texto2)">${datos.length} clientes · Total proyectado: <b style="color:var(--azul)">${fmt(totProy)}</b></span>
-          </div>
-
-          <!-- Distribución por quincena -->
-          <div style="font-size:11px;color:var(--texto2);margin-bottom:6px">Distribución por período del mes</div>
-          <div style="display:flex;gap:6px;margin-bottom:12px">
-            ${rango.map(([a,b],i)=>{
-              const t=rangoTotales[i];
-              const w=Math.round(t/maxRango*100);
-              const isPast = b <= maxDia;
-              const isCurrent = a<=maxDia && b>=maxDia;
-              const lbl = i===0?'1–10':i===1?'11–19':'20–31';
-              const bgColor = isPast ? 'var(--azul)' : isCurrent ? 'var(--verde)' : '#ccc';
-              return `<div style="flex:1;text-align:center">
-                <div style="font-size:10px;color:var(--texto2);margin-bottom:3px">${lbl}${isCurrent?` <b style="color:var(--verde)">◀ HOY</b>`:''}</div>
-                <div style="height:50px;background:#eee;border-radius:4px;position:relative;overflow:hidden">
-                  <div style="position:absolute;bottom:0;left:0;right:0;height:${w}%;background:${bgColor};border-radius:4px 4px 0 0"></div>
-                </div>
-                <div style="font-size:10px;font-weight:700;margin-top:3px;color:${bgColor==='#ccc'?'var(--texto2)':'var(--azul)'}">${fmt(t)}</div>
-                <div style="font-size:9px;color:var(--texto2)">${pct(t,totProy)}%</div>
-              </div>`;
-            }).join('')}
-          </div>
-
-          <!-- Días con más cobros (top 5) -->
-          <div style="font-size:11px;color:var(--texto2);margin-bottom:5px">Días más pesados</div>
-          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
-            ${diasOrden.sort((a,b)=>byDia[b].monto-byDia[a].monto).slice(0,6).map(d=>{
-              const isPast = d < maxDia;
-              const isHoy = d === maxDia;
-              return `<div style="background:${isPast?'var(--verde)':isHoy?'var(--ambar)':'#eee'};color:${isPast||isHoy?'#fff':'var(--texto)'};border-radius:8px;padding:3px 10px;font-size:11px;cursor:default"
-                title="${byDia[d].nombres.slice(0,3).join(', ')}${byDia[d].clientes>3?` +${byDia[d].clientes-3} más`:''}">
-                <b>día ${d}</b> — ${fmt(byDia[d].monto)} (${byDia[d].clientes} clientes)
-              </div>`;
-            }).join('')}
-          </div>
-
-          <!-- Comparación real vs proyectado -->
-          ${suc ? `<div style="border-top:1px solid var(--borde);padding-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <div style="flex:1;min-width:120px">
-              <div style="font-size:10px;color:var(--texto2)">Proyectado hasta día ${maxDia}</div>
-              <div style="font-size:14px;font-weight:700;color:var(--azul)">${fmt(cobProy)}</div>
-            </div>
-            <div style="flex:1;min-width:120px">
-              <div style="font-size:10px;color:var(--texto2)">Cobrado real (arqueos)</div>
-              <div style="font-size:14px;font-weight:700;color:var(--verde)">${fmt(cobReal)}</div>
-            </div>
-            <div style="flex:2;min-width:140px">
-              <div style="height:8px;background:#eee;border-radius:4px;margin-bottom:4px">
-                <div style="height:100%;border-radius:4px;background:${statusColor};width:${Math.min(cobReal/Math.max(cobProy,1)*100,100)}%"></div>
-              </div>
-              <div style="font-size:11px;color:${statusColor}">${statusIcon} ${statusTxt}</div>
-            </div>
-          </div>` : ''}
-        </div>`;
+        tProy+=cobProy; tReal+=cobReal;
+        html+=`<tr>
+          <td><b>${CARTERA_NAMES[cid]||cid}</b></td>
+          <td class="num cb">${fmt(cobProy)}</td>
+          <td class="num cv">${fmt(cobReal)}</td>
+          <td class="num" style="color:${dif>=0?'var(--verde)':'var(--rojo)'};font-weight:700">${dif>=0?'+':''}${fmt(dif)}</td>
+          <td class="num" style="color:${color};font-weight:700">${cobProy>0?pctC+'%':'—'}</td>
+          <td style="color:${color}">${icon}</td>
+        </tr>`;
       }
+
+      const tDif = tReal-tProy;
+      const tPct = tProy>0 ? Math.round(tReal/tProy*100) : 0;
+      html+=`<tr style="background:var(--gris);font-weight:700">
+        <td>TOTAL</td>
+        <td class="num cb">${fmt(tProy)}</td>
+        <td class="num cv">${fmt(tReal)}</td>
+        <td class="num" style="color:${tDif>=0?'var(--verde)':'var(--rojo)'}">${tDif>=0?'+':''}${fmt(tDif)}</td>
+        <td class="num">${tPct}%</td>
+        <td></td>
+      </tr></tbody></table></div>`;
     }
   }
 
