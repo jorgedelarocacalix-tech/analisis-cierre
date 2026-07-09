@@ -245,6 +245,43 @@ const fmtN = n => n==null?'—':Number(n).toLocaleString('es-HN',{minimumFractio
 const pct  = (a,b) => b ? Math.round(a/b*100) : 0;
 const SNAMES = {R1:'La Roca Comercial',R2:'Roca 1 Inverca',R3:'La Roca Motor 2',R4:'Su Mueble Danlí',R5:'Su Moto Danlí'};
 const SUCORDER = ['R1','R2','R3','R4','R5'];
+// Metas por sucursal y vendedor (sincronizadas con CRM)
+const METAS_SUC = {
+  R1: [
+    {n:'Fer',       monto:375000, uds:25},
+    {n:'Alejandra', monto:375000, uds:30},
+    {n:'Ana',       monto:375000, uds:30},
+    {n:'Johana',    monto:0,      uds:0},
+  ],
+  R2: [
+    {n:'Fer',       monto:0, uds:3},
+    {n:'Alejandra', monto:0, uds:3},
+    {n:'Ana',       monto:0, uds:3},
+  ],
+  R3: [
+    {n:'Denys',     monto:0,  uds:30},
+    {n:'Gabriela',  monto:0,  uds:20},
+  ],
+  R4: [
+    {n:'Jorge',   monto:250000, uds:20},
+    {n:'Karla',   monto:300000, uds:20},
+    {n:'Sayda',   monto:300000, uds:20},
+    {n:'Brayan',  monto:150000, uds:10},
+    {n:'Allison', monto:250000, uds:15},
+  ],
+  R5: [
+    {n:'Jorge',   monto:0, uds:6},
+    {n:'Karla',   monto:0, uds:4},
+    {n:'Sayda',   monto:0, uds:4},
+    {n:'Brayan',  monto:0, uds:2},
+    {n:'Allison', monto:0, uds:3},
+  ],
+};
+function getMeta(suc, nombreVend){
+  const lista = METAS_SUC[suc] || [];
+  const nv = nombreVend.toLowerCase();
+  return lista.find(m => nv.includes(m.n.toLowerCase())) || null;
+}
 const TRAMO_COLOR = {MES:'#1E7A50','60':'#C97A0A','90':'#E67E22','120':'#E74C3C','150':'#C0392B',VENCIDO:'#922B21',INACTIVO:'#4a4a4a'};
 const CARTERA_NAMES = {
   LA_ROCA_COMERCIAL_1:'La Roca Comercial',
@@ -957,27 +994,45 @@ function renderVentas(entries){
     </div>`;
 
     h+=`<div class="tw" style="margin-bottom:20px"><table>
-      <thead><tr><th>#</th><th>Vendedor</th><th class="num">Junio</th><th class="num">% sucursal</th><th class="num">Meta Julio</th><th class="num">Transacc.</th><th>Desempeño</th><th>Top productos</th></tr></thead><tbody>`;
+      <thead><tr><th>#</th><th>Vendedor</th><th class="num">Vendido junio</th><th class="num">Meta mensual</th><th class="num">% meta</th><th class="num">Falta</th><th>Avance</th></tr></thead><tbody>`;
     vendList.forEach(([v,d],i)=>{
-      const topProds = Object.entries(d.productos).sort((a,b)=>b[1]-a[1]).slice(0,3)
-        .map(([p,m])=>`<span style="font-size:10px;background:#f0f0f0;border-radius:10px;padding:1px 6px;margin-right:3px">${p} <b>${fmt(m)}</b></span>`).join('');
-      const pctVal = pct(d.total,sd.total);
-      const bar = `<div style="height:4px;background:#eee;border-radius:2px;margin-top:3px"><div style="height:100%;border-radius:2px;background:var(--verde);width:${pctVal}%"></div></div>`;
+      const meta   = getMeta(suc, v);
+      const metaM  = meta && meta.monto > 0 ? meta.monto : null;
+      const pctMeta= metaM ? Math.min(Math.round(d.total/metaM*100),999) : null;
+      const falta  = metaM ? metaM - d.total : null;
+      let barColor, badge;
+      if(!metaM){
+        barColor='var(--azul)'; badge=`<span style="color:var(--texto2);font-size:11px">Sin meta L</span>`;
+      } else if(pctMeta>=100){
+        barColor='var(--verde)'; badge=`<span style="color:var(--verde);font-weight:700">✅ ${pctMeta}%</span>`;
+      } else if(pctMeta>=80){
+        barColor='var(--ambar)'; badge=`<span style="color:var(--ambar);font-weight:700">⚠️ ${pctMeta}%</span>`;
+      } else {
+        barColor='var(--rojo)'; badge=`<span style="color:var(--rojo);font-weight:700">🚨 ${pctMeta}%</span>`;
+      }
+      const barW = metaM ? Math.min(d.total/metaM*100,100) : 0;
+      const bar  = metaM
+        ? `<div style="height:8px;background:#eee;border-radius:4px;margin-top:3px;position:relative">
+             <div style="height:100%;border-radius:4px;background:${barColor};width:${barW}%"></div>
+           </div>`
+        : `<div style="height:8px;background:#eee;border-radius:4px;margin-top:3px">
+             <div style="height:100%;border-radius:4px;background:var(--azul);width:${pct(d.total,sd.total)}%"></div>
+           </div>`;
       h+=`<tr>
         <td style="color:var(--texto2);font-size:13px;font-weight:700">${i+1}</td>
         <td><b>${v}</b>${bar}</td>
-        <td class="num cv">${fmt(d.total)}</td>
-        <td class="num">${pctVal}%</td>
-        <td class="num cb" style="font-weight:700">${fmt(d.total*metaPct)}</td>
-        <td class="num">${d.items}</td>
-        <td>${badgeSuc(d.total,i,prom)}</td>
-        <td>${topProds||'—'}</td></tr>`;
+        <td class="num cv" style="font-weight:700">${fmt(d.total)}</td>
+        <td class="num">${metaM?fmt(metaM):'—'}</td>
+        <td class="num">${badge}</td>
+        <td class="num" style="color:${falta>0?'var(--rojo)':'var(--verde)'}">${falta!=null?(falta>0?fmt(falta):'✅ Cumplida'):'—'}</td>
+        <td class="num" style="color:var(--texto2);font-size:11px">${d.items} ventas</td>
+      </tr>`;
     });
     h+=`<tr style="background:var(--gris);font-weight:700">
       <td colspan="2">TOTAL ${suc}</td>
-      <td class="num cv">${fmt(sd.total)}</td><td class="num">100%</td>
-      <td class="num cb">${fmt(sd.total*metaPct)}</td>
-      <td class="num">${vendList.reduce((s,[,d])=>s+d.items,0)}</td><td colspan="2"></td>
+      <td class="num cv">${fmt(sd.total)}</td>
+      <td class="num">${fmt(METAS_SUC[suc]?METAS_SUC[suc].reduce((s,m)=>s+(m.monto||0),0):0)}</td>
+      <td colspan="3"></td>
     </tr></tbody></table></div>`;
   }
 
