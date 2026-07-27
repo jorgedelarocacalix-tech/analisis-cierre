@@ -6,7 +6,8 @@ App live (GitHub Pages): https://jorgedelarocacalix-tech.github.io/analisis-cier
 Stack: Vanilla JS · HTML único (index.html) · Supabase · SheetJS · Netlify  
 Supabase proyecto ID: `ixskgawbpwwxdjnkiixt`  
 Supabase URL: `https://ixskgawbpwwxdjnkiixt.supabase.co`  
-Supabase key: `sb_publishable_-JUaSYPPkq8n4wJIKPtXGw_XMyj3EE7`
+Supabase key: (quitada de este archivo por seguridad — está en `index.html`,
+que sí la necesita para funcionar; no la vuelvas a pegar aquí)
 
 ---
 
@@ -210,7 +211,11 @@ Excel upload (si no está en SB) ───→ cierre_ventas / cierre_inventario 
 ## Netlify — Deploy manual
 
 **Site ID:** `ab7e8f0a-ee23-4c6c-9c21-6d3a128965d4`  
-**Token:** `nfp_a3vnqFTfe1pPYmiX53qrMg4QLaNHVyQU3c55`  
+**Token:** ⚠️ el token que estaba aquí quedó expuesto en un repo público y fue
+revocado de este archivo. Genera uno nuevo en Netlify (User settings →
+Applications → Personal access tokens), revoca el viejo (`nfp_a3vnq...`), y
+guárdalo fuera del repo (variable de entorno o gestor de secretos) — nunca
+lo pegues de nuevo en un archivo versionado con git.  
 **URL:** https://analisis-cierre-laroca.netlify.app
 
 Para re-deployar después de cambios en `index.html`:
@@ -219,9 +224,7 @@ Para re-deployar después de cambios en `index.html`:
 cd /Users/jorgecalix/analisis-cierre
 zip -r /tmp/analisis-cierre.zip index.html CONTEXT.md
 curl -X POST "https://api.netlify.com/api/v1/sites/ab7e8f0a-ee23-4c6c-9c21-6d3a128965d4/deploys" \
-  -H "Authorization: Bearer nfp_a3vnqFTfe1pPYmiX53qrMg4QLaNHVyQU3c55" \
+  -H "Authorization: Bearer $NETLIFY_TOKEN" \
   -H "Content-Type: application/zip" \
   --data-binary @/tmp/analisis-cierre.zip
 ```
-
-O simplemente pedirle a Claude Code que haga deploy — ya tiene el token guardado aquí.
