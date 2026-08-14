@@ -522,7 +522,49 @@ function bloqueMes(mesKey, arqList){
     <td class="num" style="color:var(--azul)">${fmt(totPos)}</td>
     <td class="num">${fmt(totVen)}</td><td></td><td></td>
   </tr></tbody></table></div>`;
+
+  html += bloquePendientes(mesKey, arqList);
   return html;
+}
+
+// Arqueos del mes que quedaron sin cerrar del todo: estado != OK y con
+// alertas CRITICA/ALERTA que nadie marcó como justificadas todavía.
+function pendientesDelMes(arqList){
+  const pend = [];
+  for(const a of arqList){
+    if(!a.estado || a.estado==='OK') continue;
+    const alertas = (a.alertas||[]).filter(al=>(al.nivel==='CRITICA'||al.nivel==='ALERTA') && al.justificado!==true);
+    if(!alertas.length) continue; // todo quedó justificado, no hay nada pendiente
+    pend.push({sucursal:a.sucursal, fecha:a.fecha, diferencia:Number(a.diferencia||0), estado:a.estado, alertas});
+  }
+  pend.sort((a,b)=> a.sucursal!==b.sucursal ? a.sucursal.localeCompare(b.sucursal) : a.fecha.localeCompare(b.fecha));
+  return pend;
+}
+
+function escHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function bloquePendientes(mesKey, arqList){
+  const pend = pendientesDelMes(arqList);
+  if(!pend.length) return '';
+  let h = `<div class="stitle">⚠ Pendientes de revisión — ${mesLabel(mesKey)} (${pend.length} día${pend.length>1?'s':''})</div>
+  <div class="abox warning" style="margin-bottom:10px">Estos arqueos del cuadre diario quedaron marcados por el sistema de Cobranza como no resueltos (estado ≠ OK) — antes de dar el mes por cerrado, alguien debe revisarlos y justificarlos allá.</div>
+  <div class="tw" style="margin-bottom:16px"><table>
+  <thead><tr><th>Sucursal</th><th>Fecha</th><th class="num">Diferencia</th><th>Estado</th><th>Qué falta revisar</th></tr></thead><tbody>`;
+  for(const p of pend){
+    const criticas = p.alertas.filter(a=>a.nivel==='CRITICA').length;
+    const top = p.alertas[0].mensaje||'';
+    h += `<tr>
+      <td><b>${p.sucursal}</b> <span style="color:var(--texto2);font-size:11px">${SNAMES[p.sucursal]||''}</span></td>
+      <td class="num">${p.fecha}</td>
+      <td class="num" style="color:${Math.abs(p.diferencia)>=5?'var(--rojo)':'var(--texto2)'}">${Math.abs(p.diferencia)>=5?fmt(p.diferencia):'—'}</td>
+      <td><span class="badge ${criticas?'br':'ba'}">${escHtml(p.estado)}</span></td>
+      <td style="font-size:11px;max-width:460px">${criticas?`<b style="color:var(--rojo)">${criticas} crítica${criticas>1?'s':''}</b> · `:''}${p.alertas.length} sin justificar — ${escHtml(top.slice(0,140))}${top.length>140?'…':''}</td>
+    </tr>`;
+  }
+  h += `</tbody></table></div>`;
+  return h;
 }
 
 function bloqueSeguimiento(mesKey, ag, agAnt){
@@ -736,8 +778,46 @@ function bloqueSeguimiento(mesKey, ag, agAnt){
   return html;
 }
 
+function bloqueAcumuladoActual(){
+  const {ultimoDia} = rangoDelMes(MES_ACTUAL);
+  const diaHoy = new Date().getDate();
+  const agActual = aggBySuc(arqueosPorMes[MES_ACTUAL] || []);
+  const agAnt    = aggBySuc(arqueosPorMes[prevMesKey(MES_ACTUAL)] || []);
+
+  // Proyección de cobro acumulada hasta hoy (todas las carteras cerradas para este mes)
+  let proyHoy=0, proyMesCompleto=0;
+  for(const item of proyeccion){
+    for(const c of (item.datos||[])){
+      const dia = Number(c.diaAsesor||0), m = Number(c.montoAsesor||0);
+      proyMesCompleto += m;
+      if(dia>0 && dia<=diaHoy) proyHoy += m;
+    }
+  }
+  const cobradoReal = sumAg(agActual,'cob_abono');
+  const pctProy = proyHoy>0 ? Math.round(cobradoReal/proyHoy*100) : null;
+  const colorProy = pctProy===null?'var(--texto2)':pctProy>=95?'var(--verde)':pctProy>=75?'var(--ambar)':'var(--rojo)';
+
+  const metaVentas = sumAg(agAnt,'ventas_erp') * 1.10;
+  const vendido = sumAg(agActual,'ventas_erp');
+  const pctVentas = metaVentas>0 ? Math.round(vendido/metaVentas*100) : null;
+  const colorVentas = pctVentas===null?'var(--texto2)':pctVentas>=95?'var(--verde)':pctVentas>=75?'var(--ambar)':'var(--rojo)';
+
+  let h = avisoCarterasFaltantes(proyeccionMesKey, proyeccion);
+  h += `<div class="stitle">Acumulado a la fecha — ${mesLabel(MES_ACTUAL)}, día ${diaHoy}/${ultimoDia}</div>
+  <div class="kpis" style="margin-bottom:18px">
+    <div class="kpi"><div class="kpi-l">Proyectado al día ${diaHoy}</div><div class="kpi-v" style="color:var(--texto2)">${proyHoy>0?fmt(proyHoy):'—'}</div><div class="kpi-s">${proyMesCompleto>0?'de '+fmt(proyMesCompleto)+' proyectado en el mes':'sin proyección cargada'}</div></div>
+    <div class="kpi"><div class="kpi-l">Cobrado real (abonos)</div><div class="kpi-v cv">${fmt(cobradoReal)}</div></div>
+    <div class="kpi"><div class="kpi-l">Avance vs proyección</div><div class="kpi-v" style="color:${colorProy}">${pctProy!=null?pctProy+'%':'—'}</div><div class="kpi-s">${pctProy!=null?(cobradoReal>=proyHoy?'✅ por encima de lo proyectado':'por debajo de lo proyectado'):''}</div></div>
+    <div class="kpi"><div class="kpi-l">Meta ventas (+10% vs mes ant.)</div><div class="kpi-v cb">${fmt(metaVentas)}</div></div>
+    <div class="kpi"><div class="kpi-l">Vendido</div><div class="kpi-v cv">${fmt(vendido)}</div></div>
+    <div class="kpi"><div class="kpi-l">Avance ventas</div><div class="kpi-v" style="color:${colorVentas}">${pctVentas!=null?pctVentas+'%':'—'}</div></div>
+  </div>`;
+  return h;
+}
+
 function bloqueGeneral(){
-  let h = `<div class="stitle">Todos los meses — totales por mes</div>
+  let h = bloqueAcumuladoActual();
+  h += `<div class="stitle">Todos los meses — totales por mes</div>
   <div class="tw"><table>
   <thead><tr>
     <th>Mes</th><th class="num">Días</th><th class="num">Cobrado</th><th class="num">Depositado</th>
