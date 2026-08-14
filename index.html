@@ -413,9 +413,21 @@ function carterasFaltantes(mesKey, proyList){
 }
 function avisoCarterasFaltantes(mesKey, proyList){
   const faltan = carterasFaltantes(mesKey, proyList);
-  if(!faltan.length) return '';
-  const nombres = faltan.map(id=>`${CARTERA_TO_SUC[id]} ${CARTERA_NAMES[id]||id}`).join(', ');
-  return `<div class="abox warning">⚠ Falta cerrar el mes de <b>${mesLabel(mesKey)}</b> en la app de Cobranza para: ${nombres}. La proyección de estas sucursales no se refleja aquí hasta que se cierren allá.</div>`;
+  let h = '';
+  if(faltan.length){
+    const nombres = faltan.map(id=>`${CARTERA_TO_SUC[id]} ${CARTERA_NAMES[id]||id}`).join(', ');
+    h += `<div class="abox warning">⚠ Falta cerrar el mes de <b>${mesLabel(mesKey)}</b> en la app de Cobranza para: ${nombres}. La proyección de estas sucursales no se refleja aquí hasta que se cierren allá.</div>`;
+  }
+  // Carteras cerradas pero sin día/monto de cobro proyectado por cliente
+  const sinDatos = (proyList||[]).filter(item=>{
+    const datos = item.datos||[];
+    return datos.length && datos.every(c=>!Number(c.montoAsesor||0));
+  });
+  if(sinDatos.length){
+    const nombres2 = sinDatos.map(item=>`${CARTERA_TO_SUC[item.cartera_id]||''} ${CARTERA_NAMES[item.cartera_id]||item.cartera_id}`).join(', ');
+    h += `<div class="abox warning">⚠ ${nombres2} ${sinDatos.length>1?'están cerradas':'está cerrada'} para <b>${mesLabel(mesKey)}</b> pero ningún cliente tiene día/monto de cobro proyectado — a los asesores les falta llenar esa proyección en Cobranza antes de que "Cobros CXC" y "Acumulado a la fecha" muestren números reales (por ahora suman L0 / "—", no porque falte cobrar, sino porque falta el dato).</div>`;
+  }
+  return h;
 }
 
 // ── Resumen — Junio 2026 ─────────────────────────────────────
