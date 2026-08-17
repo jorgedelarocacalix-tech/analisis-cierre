@@ -242,15 +242,16 @@ tr.suc-r5 td:first-child{border-left:3px solid #E67E22}
     </div>
     <div id="proyBody"><div class="loading-state">Cargando proyección…</div></div>
 
-    <div class="stitle" style="margin-top:24px">Comparar contra un Excel propio</div>
+    <div class="stitle" style="margin-top:24px">Mi Proyección (Excel propio, separado de Cobranza)</div>
+    <div class="abox info" style="margin-bottom:10px">Este Excel lo llenan los empleados aparte y no se compara ni se mezcla con la proyección de Cobranza — queda guardado como su propia sección.</div>
     <label class="upload-zone" id="zoneProy" ondragover="dov(event,'zoneProy')" ondragleave="dol('zoneProy')" ondrop="dod(event,'fProy','zoneProy')" style="max-width:320px">
       <div class="upload-ico">📊</div>
-      <div class="upload-lbl">Subir Excel de proyección propia</div>
-      <div class="upload-hint">Columnas: Cliente, Día proyectado, Monto proyectado</div>
+      <div class="upload-lbl">Subir / reemplazar Mi Proyección</div>
+      <div class="upload-hint">Columnas: Cliente, Sucursal (opcional), Día proyectado, Monto proyectado</div>
       <div class="file-sel" id="fProy-name"></div>
-      <input type="file" id="fProy" accept=".xlsx,.xls,.csv" onchange="fileChg('fProy','fProy-name','zoneProy');parseProyeccionSubida()"/>
+      <input type="file" id="fProy" accept=".xlsx,.xls,.csv" onchange="fileChg('fProy','fProy-name','zoneProy');parseProyeccionManual()"/>
     </label>
-    <div id="proyCompareBody"></div>
+    <div id="proyManualBody"></div>
   </div>
 
 </div><!-- /content -->
@@ -357,11 +358,12 @@ async function cargarTodo(){
   const btn = document.getElementById('btnCargar');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try {
-    await Promise.all([fetchArqueosDesde('2026-06-01'), fetchCarteras(), fetchProyeccion(MES_ACTUAL), loadFromSupabase()]);
+    await Promise.all([fetchArqueosDesde('2026-06-01'), fetchCarteras(), fetchProyeccion(MES_ACTUAL), fetchProyeccionManual(MES_ACTUAL), loadFromSupabase()]);
     resumenVista = MES_ACTUAL;
     renderResumen();
     renderCXC();
     renderProyeccion();
+    renderProyeccionManual();
     renderVentasMesBtns();
     renderVentasAll();
   } catch(e){ alert('Error cargando datos: '+e.message); }
@@ -1630,130 +1632,123 @@ function exportarProyeccion(){
   XLSX.writeFile(wb, `Proyeccion_${proyeccionMesKey}.xlsx`);
 }
 
-// ── Proyección: subir Excel propio y comparar contra Cobranza ─
-let proyCompareRows = null;
+// ── Mi Proyección: Excel propio de los empleados, separado de Cobranza ─
+let proyeccionManual = null; // {filas:[{nombre,sucursal,dia,monto}], subido_por, subido_at}
 
-function normNombre(s){
-  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+async function fetchProyeccionManual(mesKey){
+  const { data, error } = await sb.from('proyeccion_manual').select('mes_key,filas,subido_por,subido_at').eq('mes_key', mesKey).maybeSingle();
+  if(error){ console.error('fetchProyeccionManual', error); proyeccionManual = null; return; }
+  proyeccionManual = data || null;
 }
 
-function parseProyeccionSubida(){
+function parseDiaProyectado(raw){
+  const s = String(raw||'').trim();
+  if(!s) return null;
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-]\d{2,4}$/); // dd/mm/yyyy
+  if(m) return parseInt(m[1],10);
+  m = s.match(/^\d{4}-\d{2}-(\d{2})$/); // yyyy-mm-dd
+  if(m) return parseInt(m[1],10);
+  const n = parseInt(s.replace(/[^\d]/g,''),10);
+  return isNaN(n) ? null : n;
+}
+
+function parseProyeccionManual(){
   const file = document.getElementById('fProy').files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try{
       const wb = XLSX.read(e.target.result,{type:'array'});
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:'',raw:false});
       const hi = detectHeaderRow(rows);
       const headers = (rows[hi]||[]).map(x=>String(x).toLowerCase().trim());
       const iNom   = findCol(headers,['cliente','nombre','asesor','deudor']);
+      const iSuc   = findCol(headers,['sucursal','cartera','tienda']);
       const iDia   = findCol(headers,['día proyectado','dia proyectado','día','dia','fecha proyectada','fecha']);
       const iMonto = findCol(headers,['monto proyectado','monto','proyección','proyeccion','valor']);
       if(iNom<0){
-        document.getElementById('proyCompareBody').innerHTML='<div class="abox critica">No se encontró una columna de cliente/nombre en el Excel.</div>';
+        document.getElementById('proyManualBody').innerHTML='<div class="abox critica">No se encontró una columna de cliente/nombre en el Excel.</div>';
         return;
       }
-      const subidos = rows.slice(hi+1)
+      const filas = rows.slice(hi+1)
         .filter(r=>String(r[iNom]||'').trim())
         .map(r=>({
           nombre: String(r[iNom]).trim(),
-          dia: iDia>=0 ? (parseInt(String(r[iDia]).replace(/[^\d]/g,''),10)||null) : null,
+          sucursal: iSuc>=0 ? String(r[iSuc]||'').trim() : '',
+          dia: iDia>=0 ? parseDiaProyectado(r[iDia]) : null,
           monto: iMonto>=0 ? (parseFloat(String(r[iMonto]).replace(/[,L$\s]/g,''))||0) : 0,
         }));
-      renderComparacionProyeccion(subidos);
+      if(!filas.length){
+        document.getElementById('proyManualBody').innerHTML='<div class="abox warning">El Excel no tiene filas con cliente.</div>';
+        return;
+      }
+      const { error } = await sb.from('proyeccion_manual').upsert({
+        mes_key: MES_ACTUAL, filas, subido_por: 'Web', subido_at: new Date().toISOString(),
+      }, {onConflict:'mes_key'});
+      if(error){ document.getElementById('proyManualBody').innerHTML=`<div class="abox critica">Error guardando: ${error.message}</div>`; return; }
+      proyeccionManual = {mes_key:MES_ACTUAL, filas, subido_por:'Web', subido_at:new Date().toISOString()};
+      renderProyeccionManual();
     }catch(err){
-      document.getElementById('proyCompareBody').innerHTML=`<div class="abox critica">Error: ${err.message}</div>`;
+      document.getElementById('proyManualBody').innerHTML=`<div class="abox critica">Error: ${err.message}</div>`;
     }
   };
   reader.readAsArrayBuffer(file);
 }
 
-function renderComparacionProyeccion(subidos){
-  const cobranzaPorNombre = new Map();
-  for(const item of proyeccion){
-    const cartNombre = CARTERA_NAMES[item.cartera_id]||item.cartera_id;
-    for(const c of (item.datos||[])){
-      cobranzaPorNombre.set(normNombre(c.nombre), {
-        cartera: cartNombre, nombre: c.nombre,
-        dia: c.diaAsesor||null, monto: Number(c.montoAsesor||0),
-      });
-    }
-  }
-
-  const filas = [];
-  const vistos = new Set();
-  for(const s of subidos){
-    const key = normNombre(s.nombre);
-    const cob = cobranzaPorNombre.get(key);
-    vistos.add(key);
-    if(!cob){
-      filas.push({nombre:s.nombre, cartera:'—', diaC:null, diaS:s.dia, montoC:null, montoS:s.monto, estado:'nuevo'});
-      continue;
-    }
-    const igualDia   = (cob.dia||null)===(s.dia||null);
-    const igualMonto = Math.abs((cob.monto||0)-(s.monto||0))<1;
-    filas.push({
-      nombre:s.nombre, cartera:cob.cartera, diaC:cob.dia, diaS:s.dia, montoC:cob.monto, montoS:s.monto,
-      estado: (igualDia && igualMonto) ? 'igual' : 'diferente',
-    });
-  }
-  for(const [key,cob] of cobranzaPorNombre){
-    if(vistos.has(key)) continue;
-    if(!cob.monto && !cob.dia) continue; // Cobranza tampoco tiene proyección, no aporta a la comparación
-    filas.push({nombre:cob.nombre, cartera:cob.cartera, diaC:cob.dia, diaS:null, montoC:cob.monto, montoS:null, estado:'solo_cobranza'});
-  }
-
-  filas.sort((a,b)=> a.cartera===b.cartera ? a.nombre.localeCompare(b.nombre) : a.cartera.localeCompare(b.cartera));
-  proyCompareRows = filas;
-
-  if(!filas.length){
-    document.getElementById('proyCompareBody').innerHTML='<div class="abox warning" style="margin-top:10px">No se encontraron coincidencias ni diferencias para comparar.</div>';
+function renderProyeccionManual(){
+  const el = document.getElementById('proyManualBody');
+  if(!proyeccionManual || !(proyeccionManual.filas||[]).length){
+    el.innerHTML = '<div class="loading-state">Sin proyección propia subida todavía para '+mesLabel(MES_ACTUAL)+'.</div>';
     return;
   }
+  const filas = proyeccionManual.filas;
+  const total = filas.reduce((s,f)=>s+Number(f.monto||0),0);
+  const subidoDt = proyeccionManual.subido_at ? new Date(proyeccionManual.subido_at).toLocaleString('es-HN') : '';
 
-  const nIguales  = filas.filter(f=>f.estado==='igual').length;
-  const nDif      = filas.filter(f=>f.estado==='diferente').length;
-  const nNuevos   = filas.filter(f=>f.estado==='nuevo').length;
-  const nSoloCob  = filas.filter(f=>f.estado==='solo_cobranza').length;
+  // Por día del mes
+  const porDia = {};
+  for(const f of filas){
+    const d = f.dia || 0;
+    if(!porDia[d]) porDia[d] = {monto:0, clientes:0};
+    porDia[d].monto += Number(f.monto||0);
+    porDia[d].clientes++;
+  }
+  const dias = Object.keys(porDia).map(Number).sort((a,b)=>a-b);
 
-  const ETIQ  = {igual:'✅ Igual', diferente:'⚠ Diferente', nuevo:'🆕 Solo en Excel', solo_cobranza:'📋 Solo en Cobranza'};
-  const COLOR = {igual:'var(--verde)', diferente:'var(--ambar)', nuevo:'var(--azul)', solo_cobranza:'var(--rojo)'};
-
-  let h = `<div class="stitle" style="margin-top:16px">Comparación — Cobranza vs. Excel subido</div>
+  let h = `<div class="stitle" style="margin-top:16px">Mi Proyección — ${mesLabel(MES_ACTUAL)}</div>
   <div class="kpis" style="margin-bottom:12px">
-    <div class="kpi"><div class="kpi-l">Coinciden</div><div class="kpi-v cv">${nIguales}</div></div>
-    <div class="kpi"><div class="kpi-l">Diferentes</div><div class="kpi-v ca">${nDif}</div></div>
-    <div class="kpi"><div class="kpi-l">Solo en el Excel subido</div><div class="kpi-v cb">${nNuevos}</div></div>
-    <div class="kpi"><div class="kpi-l">Solo en Cobranza</div><div class="kpi-v cr">${nSoloCob}</div></div>
+    <div class="kpi"><div class="kpi-l">Total proyectado</div><div class="kpi-v cv">${fmt(total)}</div><div class="kpi-s">${filas.length} clientes</div></div>
+    <div class="kpi"><div class="kpi-l">Subido</div><div class="kpi-v" style="font-size:13px">${subidoDt||'—'}</div></div>
   </div>
   <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-    <button onclick="descargarComparacionProyeccion()" style="padding:6px 14px;background:var(--verde);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">⬇ Descargar comparación</button>
+    <button onclick="descargarProyeccionManual()" style="padding:6px 14px;background:var(--verde);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">⬇ Descargar Mi Proyección</button>
   </div>
+  <div class="stitle">Por día del mes</div>
+  <div class="tw" style="margin-bottom:16px"><table>
+  <thead><tr><th class="num">Día</th><th class="num">Clientes</th><th class="num">Monto proyectado</th></tr></thead><tbody>`;
+  for(const d of dias){
+    h+=`<tr><td class="num">${d||'Sin día'}</td><td class="num">${porDia[d].clientes}</td><td class="num cv">${fmt(porDia[d].monto)}</td></tr>`;
+  }
+  h+=`<tr style="background:var(--gris);font-weight:700"><td class="num">TOTAL</td><td class="num">${filas.length}</td><td class="num cv">${fmt(total)}</td></tr>
+  </tbody></table></div>`;
+
+  h+=`<div class="stitle">Por cliente</div>
   <div class="tw"><table>
-  <thead><tr><th>Cliente</th><th>Cartera</th><th class="num">Día Cobranza</th><th class="num">Día subido</th><th class="num">Monto Cobranza</th><th class="num">Monto subido</th><th>Estado</th></tr></thead><tbody>`;
+  <thead><tr><th>Cliente</th><th>Sucursal</th><th class="num">Día</th><th class="num">Monto</th></tr></thead><tbody>`;
   for(const f of filas){
-    h+=`<tr>
-      <td>${escHtml(f.nombre)}</td><td style="font-size:11px;color:var(--texto2)">${escHtml(f.cartera)}</td>
-      <td class="num">${f.diaC??'—'}</td><td class="num">${f.diaS??'—'}</td>
-      <td class="num">${f.montoC!=null?fmt(f.montoC):'—'}</td><td class="num">${f.montoS!=null?fmt(f.montoS):'—'}</td>
-      <td style="color:${COLOR[f.estado]};font-weight:700;font-size:11px">${ETIQ[f.estado]}</td>
-    </tr>`;
+    h+=`<tr><td>${escHtml(f.nombre)}</td><td style="font-size:11px;color:var(--texto2)">${escHtml(f.sucursal)||'—'}</td><td class="num">${f.dia??'—'}</td><td class="num cv">${fmt(f.monto)}</td></tr>`;
   }
   h+=`</tbody></table></div>`;
-  document.getElementById('proyCompareBody').innerHTML = h;
+  el.innerHTML = h;
 }
 
-function descargarComparacionProyeccion(){
-  if(!proyCompareRows||!proyCompareRows.length) return;
+function descargarProyeccionManual(){
+  if(!proyeccionManual || !(proyeccionManual.filas||[]).length) return;
   const wb = XLSX.utils.book_new();
-  const ETIQ = {igual:'Igual', diferente:'Diferente', nuevo:'Solo en Excel', solo_cobranza:'Solo en Cobranza'};
-  const rows=[['Cliente','Cartera','Día Cobranza','Día Subido','Monto Cobranza','Monto Subido','Estado']];
-  for(const f of proyCompareRows){
-    rows.push([f.nombre, f.cartera, f.diaC||'', f.diaS||'', f.montoC||'', f.montoS||'', ETIQ[f.estado]]);
-  }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Comparacion');
-  XLSX.writeFile(wb, `Comparacion_Proyeccion_${proyeccionMesKey}.xlsx`);
+  const rows=[['Cliente','Sucursal','Día','Monto']];
+  for(const f of proyeccionManual.filas) rows.push([f.nombre, f.sucursal||'', f.dia||'', f.monto||0]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'MiProyeccion');
+  XLSX.writeFile(wb, `Mi_Proyeccion_${MES_ACTUAL}.xlsx`);
 }
 
 // ── Upload helpers ────────────────────────────────────────────
