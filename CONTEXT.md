@@ -1,11 +1,19 @@
 # Análisis de Cierre — Contexto del proyecto
 
 Repo: https://github.com/jorgedelarocacalix-tech/analisis-cierre  
-App live (GitHub Pages, principal): https://jorgedelarocacalix-tech.github.io/analisis-cierre/  
+App live (GitHub Pages, principal): https://jorgedelarocacalix-tech.github.io/analisis-cierre/
+— se actualiza sola con cada `git push` a `main`.  
+App live (Railway, respaldo pago): https://analisis-cierre-production.up.railway.app —
+proyecto `analisis-cierre` en la cuenta Railway de Jorge (project id
+`d79443a4-257d-42ec-9520-c442f647ee2a`, service id `8cedaa05-9d47-476c-8198-92bb2f1041f1`).
+Sirve el mismo `index.html` vía un server estático mínimo (`server.js`, sin dependencias) +
+`Dockerfile` + `railway.json` (builder DOCKERFILE). **No se re-despliega solo con git push
+todavía** (el CLI deployó desde carpeta local, la integración de GitHub App para
+auto-deploy quedó pendiente de conectar desde el dashboard de Railway) — para actualizar
+después de un cambio, correr `railway up -y --detach` desde `/Users/jorgecalix/analisis-cierre`.  
 App live (Netlify, en pausa): https://analisis-cierre-laroca.netlify.app — la cuenta de
 Netlify llegó a su límite de créditos (2026-08-15) y bloquea deploys nuevos hasta que se
-agreguen créditos ahí; mientras tanto usar solo GitHub Pages, que se actualiza solo con
-cada `git push` a `main` y no depende de Netlify.  
+agreguen créditos ahí.  
 Stack: Vanilla JS · HTML único (index.html) · Supabase · SheetJS  
 Supabase proyecto ID: `ixskgawbpwwxdjnkiixt`  
 Supabase URL: `https://ixskgawbpwwxdjnkiixt.supabase.co`  
