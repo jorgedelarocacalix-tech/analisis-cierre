@@ -1,0 +1,12 @@
+{
+  "name": "analisis-cierre-laroca",
+  "version": "1.0.0",
+  "private": true,
+  "description": "La Roca — Análisis de Cierre (single-file app, servida estática para Railway)",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

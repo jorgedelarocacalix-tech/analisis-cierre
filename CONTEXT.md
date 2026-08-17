@@ -1,9 +1,12 @@
 # Análisis de Cierre — Contexto del proyecto
 
 Repo: https://github.com/jorgedelarocacalix-tech/analisis-cierre  
-App live (Netlify): https://analisis-cierre-laroca.netlify.app  
-App live (GitHub Pages): https://jorgedelarocacalix-tech.github.io/analisis-cierre/  
-Stack: Vanilla JS · HTML único (index.html) · Supabase · SheetJS · Netlify  
+App live (GitHub Pages, principal): https://jorgedelarocacalix-tech.github.io/analisis-cierre/  
+App live (Netlify, en pausa): https://analisis-cierre-laroca.netlify.app — la cuenta de
+Netlify llegó a su límite de créditos (2026-08-15) y bloquea deploys nuevos hasta que se
+agreguen créditos ahí; mientras tanto usar solo GitHub Pages, que se actualiza solo con
+cada `git push` a `main` y no depende de Netlify.  
+Stack: Vanilla JS · HTML único (index.html) · Supabase · SheetJS  
 Supabase proyecto ID: `ixskgawbpwwxdjnkiixt`  
 Supabase URL: `https://ixskgawbpwwxdjnkiixt.supabase.co`  
 Supabase key: (quitada de este archivo por seguridad — está en `index.html`,

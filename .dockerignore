@@ -1,0 +1,5 @@
+.git
+.netlify
+node_modules
+php-mysql
+CONTEXT.md
