@@ -1720,6 +1720,9 @@ function parseProyeccionManual(){
       const iSuc   = findCol(headers,['sucursal','cartera','tienda']);
       const iDia   = findCol(headers,['día proyectado','dia proyectado','día','dia','fecha proyectada','fecha']);
       const iMonto = findCol(headers,['monto proyectado','monto','proyección','proyeccion','valor']);
+      const iTramo = findCol(headers,['tramo']);
+      const iDiasMora = findCol(headers,['dias mora','días mora','dias de mora','días de mora']);
+      const iMoraVal = findCol(headers,['mora estimada','mora (l)']);
       if(iNom<0){
         document.getElementById('proyManualBody').innerHTML='<div class="abox critica">No se encontró una columna de cliente/nombre en el Excel.</div>';
         return;
@@ -1733,6 +1736,9 @@ function parseProyeccionManual(){
           sucursal: (iSuc>=0 ? String(r[iSuc]||'').trim() : '') || sucInferida.toUpperCase(),
           dia: iDia>=0 ? parseDiaProyectado(r[iDia]) : null,
           monto: iMonto>=0 ? (parseFloat(String(r[iMonto]).replace(/[,L$\s]/g,''))||0) : 0,
+          tramo: iTramo>=0 ? String(r[iTramo]||'').trim() : '',
+          dias_mora: iDiasMora>=0 ? (parseInt(String(r[iDiasMora]).replace(/[^\d]/g,''),10)||0) : null,
+          mora_val: iMoraVal>=0 ? (parseFloat(String(r[iMoraVal]).replace(/[,L$\s]/g,''))||0) : null,
         }));
       if(!filas.length){
         document.getElementById('proyManualBody').innerHTML='<div class="abox warning">El Excel no tiene filas con cliente.</div>';
@@ -1793,11 +1799,21 @@ function renderProyeccionManual(){
   h+=`<tr style="background:var(--gris);font-weight:700"><td class="num">TOTAL</td><td class="num">${filas.length}</td><td class="num cv">${fmt(total)}</td></tr>
   </tbody></table></div>`;
 
+  const hayMora = filas.some(f=>f.tramo || f.dias_mora!=null || f.mora_val!=null);
   h+=`<div class="stitle">Por cliente</div>
   <div class="tw"><table>
-  <thead><tr><th>Cliente</th><th>Sucursal</th><th class="num">Día</th><th class="num">Monto</th></tr></thead><tbody>`;
+  <thead><tr><th>Cliente</th><th>Sucursal</th><th class="num">Día</th><th class="num">Monto</th>${hayMora?'<th>Mora</th>':''}</tr></thead><tbody>`;
   for(const f of filas){
-    h+=`<tr><td>${escHtml(f.nombre)}</td><td style="font-size:11px;color:var(--texto2)">${escHtml(f.sucursal)||'—'}</td><td class="num">${f.dia??'—'}</td><td class="num cv">${fmt(f.monto)}</td></tr>`;
+    let moraTxt = '—';
+    if(f.tramo || f.dias_mora!=null || f.mora_val!=null){
+      const partes = [];
+      if(f.tramo) partes.push(escHtml(f.tramo));
+      if(f.dias_mora!=null && f.dias_mora>0) partes.push(f.dias_mora+' días');
+      if(f.mora_val!=null && f.mora_val>0) partes.push(fmt(f.mora_val));
+      moraTxt = partes.length ? partes.join(' · ') : 'AL DÍA';
+    }
+    const moraColor = f.tramo==='INACTIVO'||f.tramo==='VENCIDO' ? 'var(--rojo)' : (f.dias_mora>0||f.mora_val>0) ? 'var(--ambar)' : 'var(--verde)';
+    h+=`<tr><td>${escHtml(f.nombre)}</td><td style="font-size:11px;color:var(--texto2)">${escHtml(f.sucursal)||'—'}</td><td class="num">${f.dia??'—'}</td><td class="num cv">${fmt(f.monto)}</td>${hayMora?`<td style="font-size:11px;color:${moraColor};font-weight:600">${moraTxt}</td>`:''}</tr>`;
   }
   h+=`</tbody></table></div>`;
   el.innerHTML = h;
@@ -1806,8 +1822,8 @@ function renderProyeccionManual(){
 function descargarProyeccionManual(){
   if(!proyeccionManual || !(proyeccionManual.filas||[]).length) return;
   const wb = XLSX.utils.book_new();
-  const rows=[['Cliente','Sucursal','Día','Monto']];
-  for(const f of proyeccionManual.filas) rows.push([f.nombre, f.sucursal||'', f.dia||'', f.monto||0]);
+  const rows=[['Cliente','Sucursal','Día','Monto','Tramo','Días Mora','Mora (L)']];
+  for(const f of proyeccionManual.filas) rows.push([f.nombre, f.sucursal||'', f.dia||'', f.monto||0, f.tramo||'', f.dias_mora??'', f.mora_val??'']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'MiProyeccion');
   XLSX.writeFile(wb, `Mi_Proyeccion_${MES_ACTUAL}.xlsx`);
 }
