@@ -1724,11 +1724,13 @@ function parseProyeccionManual(){
         document.getElementById('proyManualBody').innerHTML='<div class="abox critica">No se encontró una columna de cliente/nombre en el Excel.</div>';
         return;
       }
+      // Si el Excel no trae columna Sucursal, se infiere del nombre del archivo (ej. "R1.xlsx" → R1)
+      const sucInferida = (file.name.match(/R[1-5]/i)||[])[0] || '';
       const filas = rows.slice(hi+1)
         .filter(r=>String(r[iNom]||'').trim())
         .map(r=>({
           nombre: String(r[iNom]).trim(),
-          sucursal: iSuc>=0 ? String(r[iSuc]||'').trim() : '',
+          sucursal: (iSuc>=0 ? String(r[iSuc]||'').trim() : '') || sucInferida.toUpperCase(),
           dia: iDia>=0 ? parseDiaProyectado(r[iDia]) : null,
           monto: iMonto>=0 ? (parseFloat(String(r[iMonto]).replace(/[,L$\s]/g,''))||0) : 0,
         }));
@@ -1736,11 +1738,16 @@ function parseProyeccionManual(){
         document.getElementById('proyManualBody').innerHTML='<div class="abox warning">El Excel no tiene filas con cliente.</div>';
         return;
       }
+      // Si el archivo trae sucursal(es) identificable(s), reemplaza solo esas — conserva lo ya subido de otras sucursales
+      const sucsNuevas = new Set(filas.map(f=>f.sucursal).filter(Boolean));
+      const previas = (proyeccionManual && proyeccionManual.filas) || [];
+      const conservadas = sucsNuevas.size ? previas.filter(f=>!sucsNuevas.has(f.sucursal)) : [];
+      const filasFinal = [...conservadas, ...filas];
       const { error } = await sb.from('proyeccion_manual').upsert({
-        mes_key: MES_ACTUAL, filas, subido_por: 'Web', subido_at: new Date().toISOString(),
+        mes_key: MES_ACTUAL, filas: filasFinal, subido_por: 'Web', subido_at: new Date().toISOString(),
       }, {onConflict:'mes_key'});
       if(error){ document.getElementById('proyManualBody').innerHTML=`<div class="abox critica">Error guardando: ${error.message}</div>`; return; }
-      proyeccionManual = {mes_key:MES_ACTUAL, filas, subido_por:'Web', subido_at:new Date().toISOString()};
+      proyeccionManual = {mes_key:MES_ACTUAL, filas:filasFinal, subido_por:'Web', subido_at:new Date().toISOString()};
       renderProyeccionManual();
     }catch(err){
       document.getElementById('proyManualBody').innerHTML=`<div class="abox critica">Error: ${err.message}</div>`;
