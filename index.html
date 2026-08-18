@@ -1561,7 +1561,17 @@ function resumenCobradoVsProyectado(items){
   const diaHoy = mesKey===MES_ACTUAL ? new Date().getDate() : ultimoDia;
   const ag = aggBySuc(arqueosPorMes[mesKey] || []);
 
-  let tProyMes=0, tProyHoy=0, tCobrado=0;
+  // Proyección de "Mi Equipo" (Excel subido por las encargadas de crédito, vía Drive) — solo informativo, no se mezcla con la de Cobranza
+  const miEquipoPorSuc = {};
+  if(proyeccionManual && proyeccionManual.mes_key===mesKey){
+    for(const f of (proyeccionManual.filas||[])){
+      const s = f.sucursal;
+      miEquipoPorSuc[s] = (miEquipoPorSuc[s]||0) + Number(f.monto||0);
+    }
+  }
+  const hayMiEquipo = Object.keys(miEquipoPorSuc).length>0;
+
+  let tProyMes=0, tProyHoy=0, tCobrado=0, tMiEquipo=0;
   const filas = [];
   for(const item of items){
     const suc = CARTERA_TO_SUC[item.cartera_id];
@@ -1574,8 +1584,9 @@ function resumenCobradoVsProyectado(items){
     }
     const cobrado = suc && ag[suc] ? ag[suc].cob_abono : 0;
     const falta = Math.max(0, proyMes - cobrado);
-    tProyMes+=proyMes; tProyHoy+=proyHoy; tCobrado+=cobrado;
-    filas.push({nombre:CARTERA_NAMES[item.cartera_id]||item.cartera_id, suc, proyMes, proyHoy, cobrado, falta});
+    const miEquipo = suc ? (miEquipoPorSuc[suc]||0) : 0;
+    tProyMes+=proyMes; tProyHoy+=proyHoy; tCobrado+=cobrado; tMiEquipo+=miEquipo;
+    filas.push({nombre:CARTERA_NAMES[item.cartera_id]||item.cartera_id, suc, proyMes, proyHoy, cobrado, falta, miEquipo});
   }
   const tFalta = Math.max(0, tProyMes - tCobrado);
   const pctVsHoy = tProyHoy>0 ? Math.round(tCobrado/tProyHoy*100) : null;
@@ -1589,19 +1600,21 @@ function resumenCobradoVsProyectado(items){
     <div class="kpi"><div class="kpi-l">Falta por cobrar hasta fin de mes</div><div class="kpi-v cr">${tProyMes>0?fmt(tFalta):'—'}</div><div class="kpi-s">de ${fmt(tProyMes)} proyectado en el mes</div></div>
   </div>
   <div class="tw" style="margin-bottom:16px"><table>
-  <thead><tr><th>Cartera</th><th class="num">Cobrado hasta hoy</th><th class="num">Debería (día ${diaHoy})</th><th class="num">Proy. mes completo</th><th class="num">Falta por cobrar</th></tr></thead><tbody>`;
+  <thead><tr><th>Cartera</th><th class="num">Cobrado hasta hoy</th><th class="num">Debería (día ${diaHoy})</th><th class="num">Proy. mes completo (Cobranza)</th>${hayMiEquipo?'<th class="num">Proy. mes completo (Mi Equipo)</th>':''}<th class="num">Falta por cobrar</th></tr></thead><tbody>`;
   for(const f of filas){
     h+=`<tr><td>${f.nombre}</td>
       <td class="num cv">${fmt(f.cobrado)}</td>
       <td class="num">${f.proyHoy>0?fmt(f.proyHoy):'—'}</td>
       <td class="num" style="color:var(--texto2)">${f.proyMes>0?fmt(f.proyMes):'—'}</td>
+      ${hayMiEquipo?`<td class="num" style="color:var(--azul)">${f.miEquipo>0?fmt(f.miEquipo):'—'}</td>`:''}
       <td class="num cr">${f.proyMes>0?fmt(f.falta):'—'}</td>
     </tr>`;
   }
   h+=`<tr style="background:var(--gris);font-weight:700">
     <td>TOTAL</td><td class="num cv">${fmt(tCobrado)}</td><td class="num">${tProyHoy>0?fmt(tProyHoy):'—'}</td>
-    <td class="num">${fmt(tProyMes)}</td><td class="num cr">${tProyMes>0?fmt(tFalta):'—'}</td>
-  </tr></tbody></table></div>`;
+    <td class="num">${fmt(tProyMes)}</td>${hayMiEquipo?`<td class="num" style="color:var(--azul)">${fmt(tMiEquipo)}</td>`:''}<td class="num cr">${fmt(tFalta)}</td>
+  </tr></tbody></table></div>
+  ${hayMiEquipo?`<div class="abox info" style="margin-bottom:16px;font-size:12px">📊 La columna <b>"Mi Equipo"</b> es la proyección subida en Excel por las encargadas de crédito (Drive) — es informativa, no reemplaza ni se mezcla con la proyección oficial de Cobranza.</div>`:''}`;
   return h;
 }
 
