@@ -1855,7 +1855,7 @@ function irAComparacion(suc){
   comparacionFiltroEstado = 'diferentes';
   renderProyeccionManual();
   const el = document.getElementById('comparacionVsCobranza');
-  if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+  if(el) el.scrollIntoView({behavior:'auto', block:'start'});
 }
 function setComparacionFiltroEstado(estado){ comparacionFiltroEstado = estado; renderProyeccionManual(); }
 function limpiarFiltroSucComparacion(){ comparacionFiltroSuc = null; renderProyeccionManual(); }
