@@ -1600,21 +1600,27 @@ function resumenCobradoVsProyectado(items){
     <div class="kpi"><div class="kpi-l">Falta por cobrar hasta fin de mes</div><div class="kpi-v cr">${tProyMes>0?fmt(tFalta):'—'}</div><div class="kpi-s">de ${fmt(tProyMes)} proyectado en el mes</div></div>
   </div>
   <div class="tw" style="margin-bottom:16px"><table>
-  <thead><tr><th>Cartera</th><th class="num">Cobrado hasta hoy</th><th class="num">Debería (día ${diaHoy})</th><th class="num">Proy. mes completo (Cobranza)</th>${hayMiEquipo?'<th class="num">Proy. mes completo (Mi Equipo)</th>':''}<th class="num">Falta por cobrar</th></tr></thead><tbody>`;
+  <thead><tr><th>Cartera</th><th class="num">Cobrado hasta hoy</th><th class="num">Debería (día ${diaHoy})</th><th class="num">Proy. mes completo (Cobranza)</th>${hayMiEquipo?'<th class="num">Proy. mes completo (Mi Equipo)</th><th class="num">Diferencia</th>':''}<th class="num">Falta por cobrar</th></tr></thead><tbody>`;
   for(const f of filas){
+    const dif = f.proyMes - f.miEquipo;
+    const hayDif = f.proyMes>0 || f.miEquipo>0;
+    const difColor = Math.abs(dif)<1 ? 'var(--texto2)' : (dif>0 ? 'var(--rojo)' : 'var(--verde)');
     h+=`<tr><td>${f.nombre}</td>
       <td class="num cv">${fmt(f.cobrado)}</td>
       <td class="num">${f.proyHoy>0?fmt(f.proyHoy):'—'}</td>
       <td class="num" style="color:var(--texto2)">${f.proyMes>0?fmt(f.proyMes):'—'}</td>
-      ${hayMiEquipo?`<td class="num" style="color:var(--azul)">${f.miEquipo>0?fmt(f.miEquipo):'—'}</td>`:''}
+      ${hayMiEquipo?`<td class="num" style="color:var(--azul)">${f.miEquipo>0?fmt(f.miEquipo):'—'}</td>
+      <td class="num" style="color:${difColor};font-weight:600">${hayDif?(dif>0?'+':'')+fmt(dif):'—'}</td>`:''}
       <td class="num cr">${f.proyMes>0?fmt(f.falta):'—'}</td>
     </tr>`;
   }
+  const tDif = tProyMes - tMiEquipo;
+  const tDifColor = Math.abs(tDif)<1 ? 'var(--texto2)' : (tDif>0 ? 'var(--rojo)' : 'var(--verde)');
   h+=`<tr style="background:var(--gris);font-weight:700">
     <td>TOTAL</td><td class="num cv">${fmt(tCobrado)}</td><td class="num">${tProyHoy>0?fmt(tProyHoy):'—'}</td>
-    <td class="num">${fmt(tProyMes)}</td>${hayMiEquipo?`<td class="num" style="color:var(--azul)">${fmt(tMiEquipo)}</td>`:''}<td class="num cr">${fmt(tFalta)}</td>
+    <td class="num">${fmt(tProyMes)}</td>${hayMiEquipo?`<td class="num" style="color:var(--azul)">${fmt(tMiEquipo)}</td><td class="num" style="color:${tDifColor}">${(tDif>0?'+':'')+fmt(tDif)}</td>`:''}<td class="num cr">${fmt(tFalta)}</td>
   </tr></tbody></table></div>
-  ${hayMiEquipo?`<div class="abox info" style="margin-bottom:16px;font-size:12px">📊 La columna <b>"Mi Equipo"</b> es la proyección subida en Excel por las encargadas de crédito (Drive) — es informativa, no reemplaza ni se mezcla con la proyección oficial de Cobranza.</div>`:''}`;
+  ${hayMiEquipo?`<div class="abox info" style="margin-bottom:16px;font-size:12px">📊 La columna <b>"Mi Equipo"</b> es la proyección subida en Excel por las encargadas de crédito (Drive) — es informativa, no reemplaza ni se mezcla con la proyección oficial de Cobranza. <b>Diferencia</b> = Cobranza − Mi Equipo (rojo = Cobranza proyecta más, verde = Mi Equipo proyecta más).</div>`:''}`;
   return h;
 }
 
