@@ -1610,7 +1610,7 @@ function resumenCobradoVsProyectado(items){
       <td class="num">${f.proyHoy>0?fmt(f.proyHoy):'—'}</td>
       <td class="num" style="color:var(--texto2)">${f.proyMes>0?fmt(f.proyMes):'—'}</td>
       ${hayMiEquipo?`<td class="num" style="color:var(--azul)">${f.miEquipo>0?fmt(f.miEquipo):'—'}</td>
-      <td class="num" style="color:${difColor};font-weight:600">${hayDif?(dif>0?'+':'')+fmt(dif):'—'}</td>`:''}
+      <td class="num" style="color:${difColor};font-weight:600;cursor:pointer;text-decoration:underline dotted" title="Ver diferencias cliente por cliente" onclick="irAComparacion('${f.suc}')">${hayDif?(dif>0?'+':'')+fmt(dif):'—'}</td>`:''}
       <td class="num cr">${f.proyMes>0?fmt(f.falta):'—'}</td>
     </tr>`;
   }
@@ -1618,9 +1618,9 @@ function resumenCobradoVsProyectado(items){
   const tDifColor = Math.abs(tDif)<1 ? 'var(--texto2)' : (tDif>0 ? 'var(--rojo)' : 'var(--verde)');
   h+=`<tr style="background:var(--gris);font-weight:700">
     <td>TOTAL</td><td class="num cv">${fmt(tCobrado)}</td><td class="num">${tProyHoy>0?fmt(tProyHoy):'—'}</td>
-    <td class="num">${fmt(tProyMes)}</td>${hayMiEquipo?`<td class="num" style="color:var(--azul)">${fmt(tMiEquipo)}</td><td class="num" style="color:${tDifColor}">${(tDif>0?'+':'')+fmt(tDif)}</td>`:''}<td class="num cr">${fmt(tFalta)}</td>
+    <td class="num">${fmt(tProyMes)}</td>${hayMiEquipo?`<td class="num" style="color:var(--azul)">${fmt(tMiEquipo)}</td><td class="num" style="color:${tDifColor};cursor:pointer;text-decoration:underline dotted" title="Ver diferencias cliente por cliente" onclick="irAComparacion(null)">${(tDif>0?'+':'')+fmt(tDif)}</td>`:''}<td class="num cr">${fmt(tFalta)}</td>
   </tr></tbody></table></div>
-  ${hayMiEquipo?`<div class="abox info" style="margin-bottom:16px;font-size:12px">📊 La columna <b>"Mi Equipo"</b> es la proyección subida en Excel por las encargadas de crédito (Drive) — es informativa, no reemplaza ni se mezcla con la proyección oficial de Cobranza. <b>Diferencia</b> = Cobranza − Mi Equipo (rojo = Cobranza proyecta más, verde = Mi Equipo proyecta más).</div>`:''}`;
+  ${hayMiEquipo?`<div class="abox info" style="margin-bottom:16px;font-size:12px">📊 La columna <b>"Mi Equipo"</b> es la proyección subida en Excel por las encargadas de crédito (Drive) — es informativa, no reemplaza ni se mezcla con la proyección oficial de Cobranza. <b>Diferencia</b> = Cobranza − Mi Equipo (rojo = Cobranza proyecta más, verde = Mi Equipo proyecta más). Haz clic en un valor de Diferencia para ver el detalle cliente por cliente.</div>`:''}`;
   return h;
 }
 
@@ -1847,6 +1847,19 @@ function normNombre(s){
 // Compara "Mi Proyección" (Drive, hecha por encargadas de crédito) contra
 // cierre_proyeccion (Cobranza, snapshot del sistema) — solo para ver, nunca
 // se mezclan ni se sobreescriben entre sí.
+let comparacionFiltroEstado = 'todos'; // 'todos' | 'diferentes' | 'iguales'
+let comparacionFiltroSuc = null;       // 'R1'..'R5' o null (todas)
+
+function irAComparacion(suc){
+  comparacionFiltroSuc = suc;
+  comparacionFiltroEstado = 'diferentes';
+  renderProyeccionManual();
+  const el = document.getElementById('comparacionVsCobranza');
+  if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
+function setComparacionFiltroEstado(estado){ comparacionFiltroEstado = estado; renderProyeccionManual(); }
+function limpiarFiltroSucComparacion(){ comparacionFiltroSuc = null; renderProyeccionManual(); }
+
 function renderComparacionVsCobranza(misFilas){
   if(!proyeccion.length) return '';
 
@@ -1886,6 +1899,7 @@ function renderComparacionVsCobranza(misFilas){
 
   if(!filas.length) return '';
   filas.sort((a,b)=> a.sucursal===b.sucursal ? a.nombre.localeCompare(b.nombre) : (a.sucursal||'').localeCompare(b.sucursal||''));
+  comparacionVsCobranzaRows = filas; // export siempre trae todo, sin filtro de pantalla
 
   const nIguales = filas.filter(f=>f.estado==='igual').length;
   const nDif     = filas.filter(f=>f.estado==='diferente').length;
@@ -1894,19 +1908,45 @@ function renderComparacionVsCobranza(misFilas){
   const ETIQ  = {igual:'✅ Igual', diferente:'⚠ Diferente', solo_mia:'📊 Solo en Mi Proyección', solo_cobranza:'📋 Solo en Cobranza'};
   const COLOR = {igual:'var(--verde)', diferente:'var(--ambar)', solo_mia:'var(--azul)', solo_cobranza:'var(--rojo)'};
 
-  let h = `<div class="stitle" style="margin-top:20px">Comparación — Mi Proyección vs. Cobranza</div>
+  // Filtro de pantalla: sucursal (clic desde Resumen) + estado (Todos / Diferentes / Iguales)
+  const SUC_A_NOMBRE = {};
+  for(const [id,s] of Object.entries(CARTERA_TO_SUC)) SUC_A_NOMBRE[s] = CARTERA_NAMES[id]||id;
+  const filasSuc = comparacionFiltroSuc ? filas.filter(f=>f.sucursal===comparacionFiltroSuc) : filas;
+  const nTodosScope = filasSuc.length;
+  const nIgualesScope = filasSuc.filter(f=>f.estado==='igual').length;
+  const nDifScope = filasSuc.filter(f=>f.estado!=='igual').length;
+  const filasMostrar = filasSuc.filter(f=>{
+    if(comparacionFiltroEstado==='iguales') return f.estado==='igual';
+    if(comparacionFiltroEstado==='diferentes') return f.estado!=='igual';
+    return true;
+  });
+
+  const fbtn = (val,label,n)=>`<button class="mes-btn ${comparacionFiltroEstado===val?'active':''}" onclick="setComparacionFiltroEstado('${val}')">${label} (${n})</button>`;
+
+  let h = `<div id="comparacionVsCobranza" style="scroll-margin-top:16px">
+  <div class="stitle" style="margin-top:20px">Comparación — Mi Proyección vs. Cobranza</div>
   <div class="kpis" style="margin-bottom:12px">
     <div class="kpi"><div class="kpi-l">Coinciden</div><div class="kpi-v cv">${nIguales}</div></div>
     <div class="kpi"><div class="kpi-l">Diferentes</div><div class="kpi-v ca">${nDif}</div></div>
     <div class="kpi"><div class="kpi-l">Solo en Mi Proyección</div><div class="kpi-v cb">${nSoloMia}</div></div>
     <div class="kpi"><div class="kpi-l">Solo en Cobranza</div><div class="kpi-v cr">${nSoloCob}</div></div>
   </div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:11px;font-weight:700;color:var(--texto2);text-transform:uppercase;letter-spacing:.06em">Ver:</span>
+    ${fbtn('todos','Todos',nTodosScope)}
+    ${fbtn('diferentes','Diferentes',nDifScope)}
+    ${fbtn('iguales','Iguales',nIgualesScope)}
+    ${comparacionFiltroSuc?`<span style="font-size:11px;background:var(--gris);padding:5px 10px;border-radius:8px;color:var(--texto2)">Filtrando: <b>${comparacionFiltroSuc} ${SUC_A_NOMBRE[comparacionFiltroSuc]||''}</b> <a href="javascript:void(0)" onclick="limpiarFiltroSucComparacion()" style="color:var(--rojo);font-weight:700;text-decoration:none">✕</a></span>`:''}
+  </div>
   <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
     <button onclick="descargarComparacionVsCobranza()" style="padding:6px 14px;background:var(--verde);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">⬇ Descargar comparación</button>
   </div>
   <div class="tw"><table>
   <thead><tr><th>Cliente</th><th>Sucursal</th><th class="num">Día (Mi Proy.)</th><th class="num">Día (Cobranza)</th><th class="num">Monto (Mi Proy.)</th><th class="num">Monto (Cobranza)</th><th>Estado</th></tr></thead><tbody>`;
-  for(const f of filas){
+  if(!filasMostrar.length){
+    h+=`<tr><td colspan="7" style="text-align:center;color:var(--texto2);padding:20px">Sin resultados para este filtro.</td></tr>`;
+  }
+  for(const f of filasMostrar){
     h+=`<tr>
       <td>${escHtml(f.nombre)}</td><td style="font-size:11px;color:var(--texto2)">${escHtml(f.sucursal)||'—'}</td>
       <td class="num">${f.diaM??'—'}</td><td class="num">${f.diaC??'—'}</td>
@@ -1914,8 +1954,7 @@ function renderComparacionVsCobranza(misFilas){
       <td style="color:${COLOR[f.estado]};font-weight:700;font-size:11px">${ETIQ[f.estado]}</td>
     </tr>`;
   }
-  h+=`</tbody></table></div>`;
-  comparacionVsCobranzaRows = filas;
+  h+=`</tbody></table></div></div>`;
   return h;
 }
 
