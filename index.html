@@ -349,8 +349,25 @@ let xlsInv = null;
 function showTab(id, el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
-  el.classList.add('on');
+  if(!el) el = Array.from(document.querySelectorAll('.tab')).find(t=>t.getAttribute('onclick').includes(`'${id}'`));
+  if(el) el.classList.add('on');
   document.getElementById('panel-'+id).classList.add('on');
+}
+
+// ── Deep link desde otras apps (ej. Analisis por Equipo): ?tab=ventas&suc=R1&mes=2026-08 ──
+function aplicarParamsURL(){
+  const params = new URLSearchParams(location.search);
+  const tab = params.get('tab');
+  const mes = params.get('mes');
+  const suc = params.get('suc');
+  if(mes) selectVentasMes(mes);
+  if(tab) showTab(tab);
+  if(suc){
+    setTimeout(()=>{
+      const target = document.getElementById('suc-'+suc);
+      if(target) target.scrollIntoView({behavior:'smooth',block:'start'});
+    }, 300);
+  }
 }
 
 // ── Load all ─────────────────────────────────────────────────
@@ -1233,7 +1250,7 @@ function renderVentasMes(mesKey, entries){
     const scColor = ritmoSuc===null?'var(--texto2)':ritmoSuc>=1.0?'var(--verde)':ritmoSuc>=0.80?'var(--ambar)':'var(--rojo)';
     const scIcon = ritmoSuc===null?'—':ritmoSuc>=1.10?'🚀':ritmoSuc>=1.0?'✅':ritmoSuc>=0.80?'⚠️':'🚨';
 
-    h+=`<div class="stitle">${suc} — ${SNAMES[suc]} <span style="font-size:12px;color:var(--texto2);font-weight:400">${mesLabel(mesKey)}${esMesActual?` · día ${diaHoy}/${ultimoDia}`:''}</span></div>`;
+    h+=`<div class="stitle" id="suc-${suc}">${suc} — ${SNAMES[suc]} <span style="font-size:12px;color:var(--texto2);font-weight:400">${mesLabel(mesKey)}${esMesActual?` · día ${diaHoy}/${ultimoDia}`:''}</span></div>`;
     h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       <div class="kpi" style="flex:1;min-width:140px"><div class="kpi-l">ERP ${mesLabel(mesKey)}</div><div class="kpi-v cv">${fmt(sd.total)}</div></div>
       <div class="kpi" style="flex:1;min-width:140px"><div class="kpi-l">Meta ${mesLabel(mesKey)}</div><div class="kpi-v cb">${metaSucTotal?fmt(metaSucTotal):'Sin meta'}</div></div>
@@ -2007,7 +2024,7 @@ function findCol(headers,candidates){
 }
 
 // ── Init ──────────────────────────────────────────────────────
-window.onload = () => cargarTodo();
+window.onload = () => cargarTodo().then(aplicarParamsURL);
 </script>
 </body>
 </html>
